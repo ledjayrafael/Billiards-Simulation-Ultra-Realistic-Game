@@ -294,7 +294,7 @@ export class Controls {
     if (k.has('KeyD')) tx += tip;
     if (k.has('KeyW')) ty += tip;
     if (k.has('KeyS')) ty -= tip;
-    if (tx || ty) g.setTip(g.tipX + tx, g.tipY + ty);
+    if (tx || ty) g.nudgeTip(tx, ty);
     const el = (fine ? 0.1 : 0.7) * dt;
     if (k.has('KeyE')) g.elevateBy(el);
     if (k.has('KeyQ')) g.elevateBy(-el);

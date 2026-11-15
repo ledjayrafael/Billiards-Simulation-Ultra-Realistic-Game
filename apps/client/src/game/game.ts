@@ -4,9 +4,7 @@ import {
   CUE_MAX_SPEED,
   CUE_MIN_SPEED,
   DEFAULT_PARAMS,
-  SPECS,
   TABLE_LENGTH,
-  TABLE_WIDTH,
   squirtAngle,
 } from '@billiards/physics';
 import {
@@ -28,6 +26,7 @@ import type {
 } from '@billiards/shared';
 import { CameraRig, type RigContext } from '../camera/rig';
 import { AimGuide } from '../render/aimGuide';
+import { MIN_ELEV, resolveStroke, type Stroke } from './cueClearance';
 import { BallViews } from '../render/ballViews';
 import { CueView } from '../render/cueView';
 import type { World } from '../render/world';
@@ -63,7 +62,8 @@ const TIP_LIMIT = 0.6;
 /** durasi kartu judul replay (detik, waktu nyata) */
 const REPLAY_TITLE_DUR = 1.6;
 const MAX_ELEV = (80 * Math.PI) / 180;
-const CUE_LEN = SPECS.cue.length;
+/** titik pukul tertinggi yang dipilih otomatis saat stik didatarkan di atas rail (aman dari miscue) */
+const AUTO_FOLLOW_MAX = 0.45;
 /** laju penghalusan tampilan bidikan (1/detik) — cepat, tapi tanpa lompatan per piksel */
 const AIM_SMOOTH = 28;
 const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
@@ -85,6 +85,9 @@ export class Game {
   tipX = 0;
   tipY = 0;
   elevation = 0;
+  /** Dekat rail, elevasi & titik pukul saling terkait. 'tip': titik pukul pemain dipertahankan
+   *  (elevasi naik); 'elev': elevasi pemain dipertahankan (titik pukul naik → follow). */
+  private railPriority: 'tip' | 'elev' = 'tip';
   /** tarikan stik (m) */
   pull = 0;
   /** level power terkunci (1,0–5,0, kelipatan 0,1); diingat antar pukulan */
@@ -164,6 +167,7 @@ export class Game {
     this.tipX = 0;
     this.tipY = 0;
     this.elevation = 0;
+    this.railPriority = 'tip';
     this.autoAim();
     this.rig.endShot();
     const changed = m.currentPlayer !== this.lastTurnPlayer || m.phase === 'break';
@@ -187,8 +191,19 @@ export class Game {
     if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return;
     this.aimDir = wrapAngle(this.aimDir + delta);
   }
+  /** Titik pukul absolut (widget spin): titik ini dipertahankan, elevasi menyesuaikan rail. */
   setTip(x: number, y: number): void {
     if (this.mode !== 'aim' || this.powerActive) return;
+    this.railPriority = 'tip';
+    this.applyTip(x, y);
+  }
+  /** Geser titik pukul (keyboard), mulai dari titik pukul efektif yang sedang dipakai. */
+  nudgeTip(dx: number, dy: number): void {
+    if (this.mode !== 'aim' || this.powerActive) return;
+    if (dy) this.railPriority = 'tip';
+    this.applyTip(this.tipX + dx, dy ? this.stroke().tipY + dy : this.tipY);
+  }
+  private applyTip(x: number, y: number): void {
     const d = Math.hypot(x, y);
     if (d > TIP_LIMIT) {
       x *= TIP_LIMIT / d;
@@ -200,7 +215,9 @@ export class Game {
   }
   elevateBy(d: number): void {
     if (this.mode !== 'aim' || this.powerActive) return;
-    this.elevation = Math.min(MAX_ELEV, Math.max(0, this.elevation + d));
+    // mulai dari elevasi efektif: menurunkan stik di atas rail langsung terasa (titik pukul naik)
+    this.elevation = Math.min(MAX_ELEV, Math.max(MIN_ELEV, this.stroke().elevation + d));
+    this.railPriority = 'elev';
     this.emit('change', undefined);
   }
   setPull(p: number): void {
@@ -280,27 +297,19 @@ export class Game {
   }
 
   /**
-   * Elevasi efektif: stik tidak bisa mendatar bila pangkalnya berada di atas rail —
-   * hitung elevasi minimum agar stik melewati cushion.
+   * Elevasi & titik pukul yang benar-benar dipakai: stik harus melewati cushion/rail di
+   * belakang cue ball (lihat cueClearance.ts). Saat memukul/replay: nilai pukulan terakhir.
    */
-  effectiveElevation(): number {
-    const { x, y } = this.cueBall;
-    const dx = -Math.cos(this.aimDir);
-    const dy = -Math.sin(this.aimDir);
-    const hl = TABLE_LENGTH / 2;
-    const hw = TABLE_WIDTH / 2;
-    let s = Infinity;
-    if (dx > 1e-9) s = Math.min(s, (hl - x) / dx);
-    if (dx < -1e-9) s = Math.min(s, (-hl - x) / dx);
-    if (dy > 1e-9) s = Math.min(s, (hw - y) / dy);
-    if (dy < -1e-9) s = Math.min(s, (-hw - y) / dy);
-    let need = 0.035;
-    if (s < CUE_LEN) {
-      const tipZ = R * (1 + this.tipY);
-      const clear = SPECS.table.cushionTopHeight + 0.016;
-      need = Math.max(need, Math.min(0.44, Math.asin(Math.min(1, Math.max(0, (clear - tipZ) / Math.max(0.03, s - R))))));
+  stroke(): Stroke {
+    if (this.mode !== 'aim' && this.pendingShot) {
+      const p = this.pendingShot;
+      return { tipX: p.tipX, tipY: p.tipY, elevation: p.elevation, railElev: false, railFollow: false };
     }
-    return Math.max(this.elevation, need);
+    const { x, y } = this.cueBall;
+    return resolveStroke(x, y, this.aimView, this.tipX, this.tipY, this.elevation, this.railPriority, AUTO_FOLLOW_MAX);
+  }
+  effectiveElevation(): number {
+    return this.stroke().elevation;
   }
 
   /** Pukul dengan kecepatan stik tertentu (m/s). */
@@ -309,12 +318,13 @@ export class Game {
     if (!m || this.mode !== 'aim') return;
     const speed = Math.min(CUE_MAX_SPEED, Math.max(CUE_MIN_SPEED, cueSpeed));
     this.aimDir = this.aimView;
+    const st = this.stroke();
     const shot: ShotParams = {
       dir: this.aimDir,
       speed,
-      tipX: this.tipX,
-      tipY: this.tipY,
-      elevation: this.effectiveElevation(),
+      tipX: st.tipX,
+      tipY: st.tipY,
+      elevation: st.elevation,
     };
     this.pendingShot = shot;
     this.pending = null;
@@ -452,16 +462,17 @@ export class Game {
         const d = wrapAngle(this.aimDir - this.aimView);
         this.aimView = Math.abs(d) < 1e-7 ? this.aimDir : wrapAngle(this.aimView + d * (1 - Math.exp(-AIM_SMOOTH * dt)));
         this.cueView.visible = !this.rig.cinematic;
-        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimView, elevation: this.effectiveElevation(), tipX: this.tipX, tipY: this.tipY, gap: 0.014 + this.pull });
+        const st = this.stroke();
+        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimView, elevation: st.elevation, tipX: st.tipX, tipY: st.tipY, gap: 0.014 + this.pull });
         // garis bidik mengikuti arah lari cue ball yang sebenarnya (termasuk squirt english)
-        this.guide.update(m.table, wrapAngle(this.aimView + squirtAngle(this.tipX, this.tipY, DEFAULT_PARAMS)), !this.rig.cinematic);
+        this.guide.update(m.table, wrapAngle(this.aimView + squirtAngle(st.tipX, st.tipY, DEFAULT_PARAMS)), !this.rig.cinematic);
       } else if (this.mode === 'stroke') {
         this.strokeT += dt;
         const f = Math.min(1, this.strokeT / this.strokeDur);
         const c = this.cueBall;
         // percepatan ke depan (ease-in)
         const gap = 0.014 + this.strokeFrom * (1 - f * f);
-        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimDir, elevation: this.pendingShot!.elevation, tipX: this.tipX, tipY: this.tipY, gap: f >= 1 ? 0.001 : gap });
+        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimDir, elevation: this.pendingShot!.elevation, tipX: this.pendingShot!.tipX, tipY: this.pendingShot!.tipY, gap: f >= 1 ? 0.001 : gap });
         this.guide.group.visible = false;
         if (f >= 1 && this.pending) this.startPlayback();
       } else if (this.mode === 'replay' && this.replayHold > 0) {

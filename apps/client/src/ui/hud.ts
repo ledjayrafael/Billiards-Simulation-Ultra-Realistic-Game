@@ -34,6 +34,7 @@ export class Hud {
   private toasts = el('div', 'toasts');
   private spin = el('div', 'spin interactive');
   private spinDot = el('div', 'dot');
+  private shownStroke = '';
   private spinTxt = el('small');
   private elevArc = el('i');
   private elevTxt = el('span');
@@ -145,6 +146,7 @@ export class Hud {
   /** Dipanggil tiap frame untuk elemen yang berubah terus (power, spin). */
   tick(): void {
     const g = this.game;
+    if (g.mode === 'aim') this.updateStroke();
     const lv = g.powerLevel;
     if (lv === this.shownLevel) return;
     if (this.shownLevel >= 0 && g.powerActive) {
@@ -157,6 +159,25 @@ export class Hud {
     this.power.style.setProperty('--f', f.toFixed(4));
     this.powerLv.textContent = lv.toFixed(1).replace('.', ',');
     this.powerSpd.textContent = `${powerSpeed(lv).toFixed(2).replace('.', ',')} m/s`;
+  }
+
+  /** Widget spin & elevasi: nilai efektif berubah saat membidik (rail di belakang cue ball). */
+  private updateStroke(): void {
+    const g = this.game;
+    // nilai efektif: dekat rail, elevasi/titik pukul bisa dipaksa naik agar stik melewati rail
+    const sk = g.stroke();
+    const key = `${sk.tipX.toFixed(3)},${sk.tipY.toFixed(3)},${(sk.elevation * DEG).toFixed(0)},${sk.railFollow},${sk.railElev}`;
+    if (key === this.shownStroke) return;
+    this.shownStroke = key;
+    this.spinDot.style.left = `${50 + sk.tipX * 50}%`;
+    this.spinDot.style.top = `${50 - sk.tipY * 50}%`;
+    const off = Math.hypot(sk.tipX, sk.tipY);
+    this.spinDot.classList.toggle('miscue', off > 0.5);
+    const spin = off > 0.5 ? 'risiko miscue!' : off < 0.02 ? 'center ball' : `spin ${[Math.abs(sk.tipX) >= 0.01 ? `${sk.tipX > 0 ? 'kanan' : 'kiri'} ${Math.abs(sk.tipX * 100).toFixed(0)}%` : '', Math.abs(sk.tipY) >= 0.01 ? `${sk.tipY > 0 ? 'atas' : 'bawah'} ${Math.abs(sk.tipY * 100).toFixed(0)}%` : ''].filter(Boolean).join(' · ')}`;
+    this.spinTxt.textContent = sk.railFollow ? `${spin} · follow (stik di atas rail)` : spin;
+    const ev = sk.elevation;
+    this.elevArc.style.transform = `rotate(${-ev * DEG}deg)`;
+    this.elevTxt.textContent = sk.railElev ? `elevasi ${(ev * DEG).toFixed(0)}° · min. rail${sk.railFollow ? '' : ' (Q datarkan)'}` : `elevasi ${(ev * DEG).toFixed(0)}°`;
   }
 
   refresh(): void {
@@ -196,14 +217,7 @@ export class Hud {
     this.status.innerHTML = st;
 
     // spin & elevasi
-    this.spinDot.style.left = `${50 + g.tipX * 50}%`;
-    this.spinDot.style.top = `${50 - g.tipY * 50}%`;
-    const off = Math.hypot(g.tipX, g.tipY);
-    this.spinDot.classList.toggle('miscue', off > 0.5);
-    this.spinTxt.textContent = off > 0.5 ? 'risiko miscue!' : off < 0.02 ? 'center ball' : `spin ${g.tipX >= 0 ? 'kanan' : 'kiri'} ${Math.abs(g.tipX * 100).toFixed(0)}% · ${g.tipY >= 0 ? 'atas' : 'bawah'} ${Math.abs(g.tipY * 100).toFixed(0)}%`;
-    const ev = g.mode === 'aim' ? g.effectiveElevation() : g.elevation;
-    this.elevArc.style.transform = `rotate(${-ev * DEG}deg)`;
-    this.elevTxt.textContent = `elevasi ${(ev * DEG).toFixed(0)}°`;
+    this.updateStroke();
     const aiming = g.mode === 'aim';
     this.spin.classList.toggle('hidden', !aiming);
     this.power.classList.toggle('hidden', !aiming);
