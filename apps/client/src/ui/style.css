@@ -106,6 +106,8 @@ button.on { border-color: var(--brass); color: var(--brass); }
 .sheet.clear .card { margin-left: clamp(16px, 7vw, 110px); }
 .card h1 { margin: 0; font: 600 64px/0.95 var(--serif); letter-spacing: 0.02em; }
 .card h1 span { color: var(--brass); }
+.card h1.brand img { display: block; height: 150px; width: auto; margin: 0 auto; }
+.card h1.brand + .tag { text-align: center; }
 .card .tag { color: var(--muted); letter-spacing: 0.22em; text-transform: uppercase; font-size: 11px; margin: 6px 0 22px; }
 .card h2 { margin: 0 0 4px; font: 600 34px/1.1 var(--serif); }
 .card h3 { margin: 20px 0 8px; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600; }
@@ -130,6 +132,7 @@ input[type='checkbox'] { width: 18px; height: 18px; accent-color: var(--brass); 
 .loading { position: fixed; inset: 0; background: #07090c; display: grid; place-items: center; z-index: 10; transition: opacity 0.7s; }
 .loading.done { opacity: 0; pointer-events: none; }
 .loading h1 { margin: 0 0 18px; font: 600 54px var(--serif); text-align: center; }
+.loading h1.brand img { display: block; height: 170px; width: auto; margin: 0 auto; }
 .loading h1 span { color: var(--brass); }
 .loading .track { width: 280px; height: 3px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; overflow: hidden; }
 .loading .track i { display: block; height: 100%; width: 0%; background: var(--brass); transition: width 0.25s; }

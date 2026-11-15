@@ -26,7 +26,7 @@ function validShot(s: unknown): s is ShotParams {
 export async function buildApp(opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 });
 
-  app.get('/api/health', async () => ({ ok: true, name: 'billiards-9ball', version: '0.1.0' }));
+  app.get('/api/health', async () => ({ ok: true, name: 'open-billiard', version: '0.1.0' }));
 
   // Menjalankan mesin fisika yang sama di Node (dipakai untuk parity client↔server;
   // nanti menjadi dasar server authoritative).

@@ -1,4 +1,10 @@
-# NINE — Simulator Biliar 9-Ball
+<p align="center">
+  <img src="apps/client/public/brand/openbilliard.png" alt="Open Billiard" width="220">
+</p>
+
+<h1 align="center">Open Billiard</h1>
+
+<p align="center">Simulator biliar 9-ball realistis untuk web</p>
 
 Simulator 9-ball realistis untuk web: 2 pemain lokal bergantian (hot-seat) di satu komputer.
 Mesin fisika biliar khusus (TypeScript, event-based, deterministik), aset 3D dibangun 100% dari

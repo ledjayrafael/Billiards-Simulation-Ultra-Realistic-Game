@@ -266,7 +266,7 @@ export class Hud {
     const o = this.menuOptions;
     const card = this.open(
       'menu',
-      `<h1>NINE<span>.</span></h1><div class="tag">Simulator biliar 9-ball</div>
+      `<h1 class="brand"><img src="/brand/openbilliard-320.png" alt="Open Billiard"></h1><div class="tag">Simulator biliar 9-ball</div>
       <h3>Pemain</h3>
       <div class="row"><label>Pemain 1</label><input type="text" maxlength="16" value="${esc(o.playerNames[0])}" data-p="0"></div>
       <div class="row"><label>Pemain 2</label><input type="text" maxlength="16" value="${esc(o.playerNames[1])}" data-p="1"></div>
@@ -347,7 +347,7 @@ export class Hud {
 }
 
 export function createLoading(): { set(f: number, label: string): void; done(): void } {
-  const root = el('div', 'loading', '<div><h1>NINE<span>.</span></h1><div class="track"><i></i></div><p>memuat…</p></div>');
+  const root = el('div', 'loading', '<div><h1 class="brand"><img src="/brand/openbilliard-320.png" alt="Open Billiard"></h1><div class="track"><i></i></div><p>memuat…</p></div>');
   document.body.appendChild(root);
   const bar = root.querySelector('i') as HTMLElement;
   const p = root.querySelector('p') as HTMLElement;
