@@ -57,7 +57,7 @@ export function dexp(x: number): number {
   if (x < -700) return 0;
   let k = 0;
   let a = x;
-  while (a > 0.25 || a < -0.25) {
+  while (a > 0.03 || a < -0.03) {
     a *= 0.5;
     k++;
   }
