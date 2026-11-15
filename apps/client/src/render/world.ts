@@ -1,0 +1,319 @@
+import * as THREE from 'three';
+import {
+  BloomEffect,
+  DepthOfFieldEffect,
+  EffectComposer,
+  EffectPass,
+  RenderPass,
+  SMAAEffect,
+  SMAAPreset,
+  ToneMappingEffect,
+  ToneMappingMode,
+  VignetteEffect,
+} from 'postprocessing';
+import { N8AOPostPass } from 'n8ao';
+import type { Assets } from './assets';
+import { toThree } from './coords';
+
+export type Quality = 'low' | 'medium' | 'high' | 'ultra';
+
+interface QualityPreset {
+  pixelRatio: number;
+  shadowSize: number;
+  shadowLights: number;
+  ao: 'off' | 'half' | 'full';
+  aoSamples: number;
+  bloom: boolean;
+  smaa: boolean;
+  dof: boolean;
+  anisotropy: number;
+}
+
+const PRESETS: Record<Quality, QualityPreset> = {
+  low: { pixelRatio: 1, shadowSize: 1024, shadowLights: 1, ao: 'off', aoSamples: 0, bloom: false, smaa: false, dof: false, anisotropy: 2 },
+  medium: { pixelRatio: 1.25, shadowSize: 1024, shadowLights: 3, ao: 'half', aoSamples: 8, bloom: true, smaa: true, dof: false, anisotropy: 4 },
+  high: { pixelRatio: 1.5, shadowSize: 2048, shadowLights: 3, ao: 'full', aoSamples: 12, bloom: true, smaa: true, dof: true, anisotropy: 8 },
+  ultra: { pixelRatio: 2, shadowSize: 4096, shadowLights: 3, ao: 'full', aoSamples: 24, bloom: true, smaa: true, dof: true, anisotropy: 16 },
+};
+
+// ── Patch shader global: iradiansi difus IBL diambil dari panorama TANPA lampu (envMapDiffuse),
+//    refleksi spekular dari panorama lengkap. Cahaya langsung lampu ditangani SpotLight (dengan
+//    bayangan), sehingga tidak terhitung dua kali. iblDiffuseScale = 0 untuk objek ber-lightmap.
+{
+  const chunk = THREE.ShaderChunk.envmap_physical_pars_fragment;
+  const patched = chunk
+    .replace('#ifdef USE_ENVMAP', '#ifdef USE_ENVMAP\n\tuniform samplerCube envMapDiffuse;\n\tuniform float iblDiffuseScale;')
+    .replace(
+      /vec4 envMapColor = textureLod\( envMap, envMapRotation \* worldNormal, ENVMAP_MAX_LOD \);\s*return PI \* envMapColor\.rgb \* envMapIntensity;/,
+      'vec4 envMapColor = textureLod( envMapDiffuse, envMapRotation * worldNormal, ENVMAP_MAX_LOD );\n\t\t\treturn PI * envMapColor.rgb * envMapIntensity * iblDiffuseScale;',
+    );
+  if (!patched.includes('* iblDiffuseScale;')) {
+    console.warn('Patch IBL difus tidak cocok dengan versi three.js ini — memakai IBL bawaan.');
+  } else {
+    THREE.ShaderChunk.envmap_physical_pars_fragment = patched;
+  }
+}
+
+export class World {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene = new THREE.Scene();
+  readonly camera = new THREE.PerspectiveCamera(40, 1, 0.03, 40);
+  readonly balls: THREE.Mesh[];
+  readonly cue: THREE.Object3D;
+  readonly spots: THREE.SpotLight[] = [];
+  /** Objek yang disembunyikan saat kamera berada di atas (top view). */
+  private overhead: THREE.Object3D[] = [];
+  private composer!: EffectComposer;
+  private dof: DepthOfFieldEffect | null = null;
+  private dofPass: EffectPass | null = null;
+  private quality: Quality = 'high';
+  private envDiffuseTex: THREE.Texture;
+  private width = 1;
+  private height = 1;
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    readonly assets: Assets,
+    quality: Quality,
+  ) {
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: false,
+      powerPreference: 'high-performance',
+      stencil: false,
+      depth: false,
+    });
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.info.autoReset = false;
+
+    // environment (PMREM)
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    assets.envReflect.mapping = THREE.EquirectangularReflectionMapping;
+    assets.envDiffuse.mapping = THREE.EquirectangularReflectionMapping;
+    const envReflect = pmrem.fromEquirectangular(assets.envReflect).texture;
+    this.envDiffuseTex = pmrem.fromEquirectangular(assets.envDiffuse).texture;
+    pmrem.dispose();
+    this.scene.environment = envReflect;
+    this.scene.background = new THREE.Color(0x020203);
+
+    // ── objek ──
+    const { table, room, manifest } = assets;
+    this.scene.add(room, table);
+    const lightmapped = new Set<THREE.Object3D>();
+    for (const name of manifest.lightmap.objects) {
+      const o = room.getObjectByName(name);
+      o?.traverse((c) => lightmapped.add(c));
+    }
+    room.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      const isLm = lightmapped.has(mesh) && !!mesh.geometry.attributes.uv1;
+      for (const m of materialsOf(mesh)) {
+        if (isLm) {
+          m.lightMap = assets.lightmap;
+          m.lightMapIntensity = manifest.lightmap.intensity;
+          m.envMapIntensity = 0.35;
+        }
+        this.patchMaterial(m, isLm ? 0 : 1);
+      }
+    });
+    for (const n of ['Lamp', 'Lamp_Glow', 'Room_Ceiling']) {
+      const o = room.getObjectByName(n);
+      if (o) this.overhead.push(o);
+    }
+    room.getObjectByName('Chalk')?.traverse((o) => {
+      o.castShadow = true;
+    });
+    table.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = !/Diamonds|Pocket_Cups/.test(mesh.name) && !/Diamonds|Pocket_Cups/.test(mesh.parent?.name ?? '');
+      mesh.receiveShadow = true;
+      for (const m of materialsOf(mesh)) {
+        // sheen bawaan eksportir (putih, penuh) membuat kain tampak pucat → redam & warnai
+        const pm = m as THREE.MeshPhysicalMaterial;
+        if (m.name === 'Cloth' && pm.isMeshPhysicalMaterial) {
+          pm.sheen = 0.18;
+          pm.sheenColor.setRGB(0.25, 0.45, 0.7);
+          pm.sheenRoughness = 0.6;
+        }
+        this.patchMaterial(m, 1);
+      }
+    });
+
+    this.balls = assets.balls;
+    for (const b of this.balls) {
+      b.castShadow = true;
+      b.receiveShadow = true;
+      b.matrixAutoUpdate = true;
+      for (const m of materialsOf(b)) this.patchMaterial(m, 1);
+      this.scene.add(b);
+    }
+    this.cue = assets.cue;
+    this.cue.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = true;
+      mesh.receiveShadow = false;
+      for (const m of materialsOf(mesh)) this.patchMaterial(m, 1);
+    });
+    this.scene.add(this.cue);
+
+    // ── lampu meja (cahaya langsung real-time) ──
+    for (const s of manifest.spots) {
+      const light = new THREE.SpotLight(
+        new THREE.Color().setRGB(s.color[0], s.color[1], s.color[2]),
+        s.intensity,
+        0,
+        s.angle,
+        s.penumbra,
+        2,
+      );
+      toThree(s.pos[0], s.pos[1], s.pos[2], light.position);
+      toThree(s.pos[0], s.pos[1], 0, light.target.position);
+      light.shadow.camera.near = 0.2;
+      light.shadow.camera.far = 3.2;
+      light.shadow.bias = -0.0006;
+      light.shadow.normalBias = 0.0025;
+      light.shadow.radius = 3.5;
+      this.scene.add(light, light.target);
+      this.spots.push(light);
+    }
+    this.setQuality(quality);
+  }
+
+  private patchMaterial(m: THREE.Material, iblDiffuseScale: number): void {
+    const tex = this.envDiffuseTex;
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms.envMapDiffuse = { value: tex };
+      shader.uniforms.iblDiffuseScale = { value: iblDiffuseScale };
+    };
+    m.customProgramCacheKey = () => 'ibl-split';
+  }
+
+  /** Daftarkan material tambahan (dibuat di luar World) agar memakai IBL terpisah. */
+  registerMaterial(m: THREE.Material): void {
+    this.patchMaterial(m, 1);
+  }
+
+  setQuality(q: Quality): void {
+    this.quality = q;
+    const p = PRESETS[q];
+    const r = this.renderer;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, p.pixelRatio));
+    this.spots.forEach((light, i) => {
+      // pada preset rendah hanya lampu tengah yang berbayangan
+      const cast = p.shadowLights >= 3 || i === 1;
+      light.castShadow = cast;
+      if (light.shadow.mapSize.x !== p.shadowSize) {
+        light.shadow.mapSize.set(p.shadowSize, p.shadowSize);
+        light.shadow.map?.dispose();
+        light.shadow.map = null;
+      }
+    });
+    const maxAniso = r.capabilities.getMaxAnisotropy();
+    this.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of materialsOf(mesh)) {
+        for (const t of [m.map, m.normalMap, m.roughnessMap]) {
+          if (t) {
+            t.anisotropy = Math.min(maxAniso, p.anisotropy);
+            t.needsUpdate = true;
+          }
+        }
+      }
+    });
+
+    // ── postprocessing ──
+    this.composer?.dispose();
+    const composer = new EffectComposer(r, { frameBufferType: THREE.HalfFloatType, multisampling: 0 });
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    if (p.ao !== 'off') {
+      const ao = new N8AOPostPass(this.scene, this.camera, this.width, this.height);
+      ao.configuration.aoRadius = 0.09;
+      ao.configuration.distanceFalloff = 1.0;
+      ao.configuration.intensity = 2.2;
+      ao.configuration.aoSamples = p.aoSamples;
+      ao.configuration.denoiseSamples = 6;
+      ao.configuration.denoiseRadius = 8;
+      ao.configuration.halfRes = p.ao === 'half';
+      ao.configuration.gammaCorrection = false;
+      ao.configuration.color = new THREE.Color(0, 0, 0);
+      composer.addPass(ao);
+    }
+    this.dof = null;
+    this.dofPass = null;
+    if (p.dof) {
+      this.dof = new DepthOfFieldEffect(this.camera, {
+        worldFocusDistance: 2.5,
+        worldFocusRange: 1.6,
+        bokehScale: 3.2,
+        resolutionScale: 0.5,
+      });
+      this.dofPass = new EffectPass(this.camera, this.dof);
+      this.dofPass.enabled = false;
+      composer.addPass(this.dofPass);
+    }
+    const effects = [];
+    if (p.bloom) {
+      effects.push(new BloomEffect({ intensity: 0.55, luminanceThreshold: 1.0, luminanceSmoothing: 0.25, mipmapBlur: true, radius: 0.72 }));
+    }
+    effects.push(new VignetteEffect({ darkness: 0.42, offset: 0.32 }));
+    effects.push(new ToneMappingEffect({ mode: ToneMappingMode.AGX }));
+    composer.addPass(new EffectPass(this.camera, ...effects));
+    if (p.smaa) composer.addPass(new EffectPass(this.camera, new SMAAEffect({ preset: SMAAPreset.HIGH })));
+    this.composer = composer;
+    this.resize(this.width, this.height);
+  }
+
+  getQuality(): Quality {
+    return this.quality;
+  }
+
+  /** Depth of field (hanya kamera sinematik, preset High/Ultra). */
+  setCinematicDof(enabled: boolean, focusDistance = 2.5): void {
+    if (!this.dofPass || !this.dof) return;
+    this.dofPass.enabled = enabled;
+    this.dof.cocMaterial.worldFocusDistance = focusDistance;
+  }
+
+  setOverheadHidden(hidden: boolean): void {
+    for (const o of this.overhead) o.visible = !hidden;
+  }
+
+  resize(w: number, h: number): void {
+    this.width = Math.max(1, w);
+    this.height = Math.max(1, h);
+    this.renderer.setSize(this.width, this.height, false);
+    this.composer.setSize(this.width, this.height);
+    this.camera.aspect = this.width / this.height;
+    this.camera.updateProjectionMatrix();
+  }
+
+  render(dt: number): void {
+    this.renderer.info.reset();
+    this.composer.render(dt);
+  }
+
+  /** Kompilasi shader & render beberapa frame agar tidak ada stutter pada pukulan pertama. */
+  async warmUp(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch {
+      this.renderer.compile(this.scene, this.camera);
+    }
+    for (let i = 0; i < 3; i++) this.render(0.016);
+  }
+}
+
+function materialsOf(mesh: THREE.Mesh): THREE.MeshStandardMaterial[] {
+  const m = mesh.material;
+  return (Array.isArray(m) ? m : [m]) as THREE.MeshStandardMaterial[];
+}
