@@ -88,7 +88,9 @@ export class Hud {
 
     game.on('change', () => this.refresh());
     game.on('toast', (t) => this.toast(t.text, t.kind));
-    game.on('turn', (t) => this.turnOverlay(t.player, t.reason));
+    game.on('turn', (t) => {
+      if (t.changed || t.reason) this.turnOverlay(t.player, t.reason, t.changed);
+    });
     game.on('rackOver', (r) => this.showRackOver(r.winner, r.matchOver));
     this.refresh();
   }
@@ -104,11 +106,11 @@ export class Hud {
     setTimeout(() => t.remove(), 3500);
   }
 
-  private turnOverlay(player: number, reason: string): void {
+  private turnOverlay(player: number, reason: string, changed: boolean): void {
     const m = this.game.match;
     if (!m) return;
     this.overlay.innerHTML = '';
-    const o = el('div', 'turn', `<div><small>Giliran</small><h2>${esc(m.options.playerNames[player])}</h2>${reason ? `<p>${esc(reason)}</p>` : ''}</div>`);
+    const o = el('div', 'turn', `<div><small>${changed ? 'Giliran' : 'Lanjut'}</small><h2>${esc(m.options.playerNames[player])}</h2>${reason ? `<p>${esc(reason)}</p>` : ''}</div>`);
     this.overlay.appendChild(o);
     setTimeout(() => o.remove(), 1950);
   }

@@ -53,6 +53,15 @@ export class Controls {
     return document.pointerLockElement === this.canvas || this.softLock;
   }
 
+  /** Lepas kursor (mis. saat ball in hand agar cue ball bisa diseret). */
+  release(): void {
+    this.softLock = false;
+    this.cancelStroke();
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.hud.pointerLocked = false;
+    this.hud.refresh();
+  }
+
   private ndc(e: MouseEvent): [number, number] {
     const r = this.canvas.getBoundingClientRect();
     return [((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1)];

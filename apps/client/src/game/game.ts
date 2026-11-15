@@ -45,7 +45,7 @@ export interface GameEvents {
   change: void;
   simEvent: { event: SimEvent; replay: boolean };
   shot: { isBreak: boolean; speed: number; miscue: boolean };
-  turn: { player: number; reason: string };
+  turn: { player: number; reason: string; changed: boolean };
   toast: { text: string; kind: 'info' | 'foul' | 'good' };
   rackOver: { winner: number; matchOver: boolean };
 }
@@ -95,6 +95,7 @@ export class Game {
   private powerT = 0;
   private shotIsBreak = false;
   private focus: [number, number] = [0, 0];
+  private lastTurnPlayer = -1;
 
   constructor(
     readonly world: World,
@@ -119,6 +120,7 @@ export class Game {
   startMatch(options: Partial<MatchOptions>, seed = (Date.now() & 0x7fffffff) | 1): void {
     this.match = createMatch(options, seed);
     this.last = null;
+    this.lastTurnPlayer = -1;
     this.ballViews.setTable(this.match.table);
     this.beginTurn('Break');
   }
@@ -148,7 +150,9 @@ export class Game {
     this.elevation = 0;
     this.autoAim();
     this.rig.endShot();
-    this.emit('turn', { player: m.currentPlayer, reason });
+    const changed = m.currentPlayer !== this.lastTurnPlayer || m.phase === 'break';
+    this.lastTurnPlayer = m.currentPlayer;
+    this.emit('turn', { player: m.currentPlayer, reason, changed });
     this.emit('change', undefined);
   }
 

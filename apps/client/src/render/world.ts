@@ -281,7 +281,9 @@ export class World {
       effects.push(new BloomEffect({ intensity: 0.55, luminanceThreshold: 1.0, luminanceSmoothing: 0.25, mipmapBlur: true, radius: 0.72 }));
     }
     effects.push(new VignetteEffect({ darkness: 0.42, offset: 0.32 }));
-    effects.push(new ToneMappingEffect({ mode: ToneMappingMode.AGX }));
+    const tm = new URLSearchParams(location.search).get('tm');
+    const mode = tm === 'agx' ? ToneMappingMode.AGX : tm === 'neutral' ? ToneMappingMode.NEUTRAL : ToneMappingMode.ACES_FILMIC;
+    effects.push(new ToneMappingEffect({ mode }));
     composer.addPass(new EffectPass(this.camera, ...effects));
     if (p.smaa) composer.addPass(new EffectPass(this.camera, new SMAAEffect({ preset: SMAAPreset.HIGH })));
     this.composer = composer;

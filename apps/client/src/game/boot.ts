@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { rackNineBall } from '@billiards/rules';
 import type { MatchOptions } from '@billiards/shared';
+import { AudioEngine } from '../audio/audio';
 import { Controls } from '../input/controls';
 import { loadAssets } from '../render/assets';
 import { World, type Quality } from '../render/world';
@@ -26,6 +27,10 @@ try {
   const game = new Game(world, settings);
   world.resize(innerWidth, innerHeight);
 
+  const audio = new AudioEngine(world.camera);
+  audio.setVolume(settings.volume);
+  audio.setAmbience(settings.ambience);
+  game.on('simEvent', ({ event }) => audio.onSimEvent(event, game.playSpeed));
   let appliedQuality = settings.quality;
   const showcase = (): void => {
     game.ballViews.setTable(rackNineBall(7).table);
@@ -46,6 +51,8 @@ try {
         world.setQuality(settings.quality);
       }
       game.guide.mode = settings.guide;
+      audio.setVolume(settings.volume);
+      audio.setAmbience(settings.ambience);
     },
     quitToMenu() {
       game.quitMatch();
@@ -61,6 +68,9 @@ try {
   });
   const controls = new Controls(canvas, game, hud, settings);
   game.on('rackOver', () => game.rig.playCinematic('Cam_RackWin', { loop: true }));
+  game.on('turn', () => {
+    if (game.match && game.match.ballInHand !== 'none') controls.release();
+  });
 
   showcase();
   game.rig.snap({ cueX: -0.75, cueY: 0, aimDir: 0, focusX: 0, focusY: 0 });
@@ -78,6 +88,7 @@ try {
   const frame = (now: number): void => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    audio.beginFrame();
     controls.update(dt);
     // __timeScale: percepatan untuk pengujian otomatis
     game.update(dt * ((window as unknown as { __timeScale?: number }).__timeScale ?? 1));
