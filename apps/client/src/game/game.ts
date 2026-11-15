@@ -3,9 +3,11 @@ import {
   BALL_RADIUS as R,
   CUE_MAX_SPEED,
   CUE_MIN_SPEED,
+  DEFAULT_PARAMS,
   SPECS,
   TABLE_LENGTH,
   TABLE_WIDTH,
+  squirtAngle,
 } from '@billiards/physics';
 import {
   applyShot,
@@ -208,6 +210,8 @@ export class Game {
   /** Space pertama: kunci bidikan/spin/elevasi; mouse kini mengatur power. */
   startPowerBar(): boolean {
     if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return false;
+    // kunci arah yang sedang TERLIHAT (aimView), bukan target yang masih dikejar penghalusan
+    this.aimDir = this.aimView;
     this.powerActive = true;
     this.powerRaw = this.powerLevel;
     this.pull = this.powerPull();
@@ -304,7 +308,7 @@ export class Game {
     const m = this.match;
     if (!m || this.mode !== 'aim') return;
     const speed = Math.min(CUE_MAX_SPEED, Math.max(CUE_MIN_SPEED, cueSpeed));
-    this.aimView = this.aimDir;
+    this.aimDir = this.aimView;
     const shot: ShotParams = {
       dir: this.aimDir,
       speed,
@@ -449,7 +453,8 @@ export class Game {
         this.aimView = Math.abs(d) < 1e-7 ? this.aimDir : wrapAngle(this.aimView + d * (1 - Math.exp(-AIM_SMOOTH * dt)));
         this.cueView.visible = !this.rig.cinematic;
         this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimView, elevation: this.effectiveElevation(), tipX: this.tipX, tipY: this.tipY, gap: 0.014 + this.pull });
-        this.guide.update(m.table, this.aimView, !this.rig.cinematic);
+        // garis bidik mengikuti arah lari cue ball yang sebenarnya (termasuk squirt english)
+        this.guide.update(m.table, wrapAngle(this.aimView + squirtAngle(this.tipX, this.tipY, DEFAULT_PARAMS)), !this.rig.cinematic);
       } else if (this.mode === 'stroke') {
         this.strokeT += dt;
         const f = Math.min(1, this.strokeT / this.strokeDur);

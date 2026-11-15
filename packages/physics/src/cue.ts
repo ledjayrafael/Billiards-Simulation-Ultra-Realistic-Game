@@ -3,6 +3,13 @@ import type { Body } from './ball';
 import type { PhysicsParams } from './constants';
 import { dcos, dsin } from './dmath';
 
+/** Sudut squirt (rad, CCW dari atas) untuk offset tip — english kanan → bola menyimpang ke kiri.
+ *  0 bila miscue. Dipakai juga oleh garis bidik agar prediksi sama dengan hasil pukulan. */
+export function squirtAngle(tipX: number, tipY: number, P: PhysicsParams): number {
+  if (tipX === 0 || Math.sqrt(tipX * tipX + tipY * tipY) > P.miscueLimit + 1e-9) return 0;
+  return P.squirtMax * (tipX / P.miscueLimit);
+}
+
 /**
  * Pukulan stik → kecepatan + spin awal cue ball.
  * Impuls F sepanjang arah stik d; restitusi tip e di titik kontak:
@@ -60,7 +67,7 @@ export function applyCue(
   b.wz = k * F * (px * dy - py * dx);
   // squirt: english kanan → bola menyimpang ke kiri (CCW dilihat dari atas)
   if (!miscue && a !== 0) {
-    const sq = P.squirtMax * (a / P.miscueLimit);
+    const sq = squirtAngle(a, bb, P);
     const cs = dcos(sq);
     const sn = dsin(sq);
     const nvx = vx * cs - vy * sn;
