@@ -313,6 +313,27 @@ describe('pocket & lain-lain', () => {
     expect(ball(res2, 0).motion).toBe('stationary');
     expect(ball(res2, 0).pos[0]).toBeGreaterThan(0.1);
   });
+  it('rotasi visual: bola menggelinding sejauh d berputar d/R terhadap sumbu tegak lurus arah gerak', () => {
+    const res = simulate(table([0, -1, 0]), shot({ speed: 0.8 }));
+    const b = ball(res, 0);
+    const d = b.pos[0] + 1;
+    // sliding awal sedikit mengurangi rotasi; toleransi 3%
+    const [qx, qy, qz, qw] = b.quat;
+    expect(Math.abs(qx)).toBeLessThan(1e-9);
+    expect(Math.abs(qz)).toBeLessThan(1e-9);
+    const total = d / R;
+    const expected = Math.abs(Math.sin(total / 2));
+    // bandingkan sudut modulo 2π lewat rentang toleransi pada total putaran
+    let ok = false;
+    for (let k = 0.97; k <= 1.0001; k += 0.0005) {
+      if (Math.abs(Math.abs(Math.sin((total * k) / 2)) - Math.abs(qy)) < 0.02 && Math.abs(Math.abs(Math.cos((total * k) / 2)) - Math.abs(qw)) < 0.02) ok = true;
+    }
+    expect(expected).toBeGreaterThanOrEqual(0);
+    expect(ok).toBe(true);
+    // arah putaran: topspin (ω_y > 0) untuk gerak +x → pada awal lintasan qy > 0
+    const tr = res.frames[0];
+    expect(tr.q[5 * 4 + 1]).toBeGreaterThan(0);
+  });
   it('english: spin samping bertahan lalu habis', () => {
     const res = simulate(table([0, 0, 0]), shot({ speed: 1, tipX: 0.4 }));
     expect(ball(res, 0).motion).toBe('stationary');

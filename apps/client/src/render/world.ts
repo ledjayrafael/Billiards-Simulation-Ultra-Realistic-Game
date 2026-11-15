@@ -61,8 +61,9 @@ export class World {
   readonly balls: THREE.Mesh[];
   readonly cue: THREE.Object3D;
   readonly spots: THREE.SpotLight[] = [];
-  /** Objek yang disembunyikan saat kamera berada di atas (top view). */
-  private overhead: THREE.Object3D[] = [];
+  /** Objek yang disembunyikan saat kamera berada di atasnya. */
+  private lampObjs: THREE.Object3D[] = [];
+  private ceilingObj: THREE.Object3D | null = null;
   private composer!: EffectComposer;
   private dof: DepthOfFieldEffect | null = null;
   private dofPass: EffectPass | null = null;
@@ -123,10 +124,11 @@ export class World {
         this.patchMaterial(m, isLm ? 0 : 1);
       }
     });
-    for (const n of ['Lamp', 'Lamp_Glow', 'Room_Ceiling']) {
+    for (const n of ['Lamp', 'Lamp_Glow']) {
       const o = room.getObjectByName(n);
-      if (o) this.overhead.push(o);
+      if (o) this.lampObjs.push(o);
     }
+    this.ceilingObj = room.getObjectByName('Room_Ceiling') ?? null;
     room.getObjectByName('Chalk')?.traverse((o) => {
       o.castShadow = true;
     });
@@ -138,12 +140,18 @@ export class World {
       for (const m of materialsOf(mesh)) {
         // sheen bawaan eksportir (putih, penuh) membuat kain tampak pucat → redam & warnai
         const pm = m as THREE.MeshPhysicalMaterial;
+        // kantong pocket: probe refleksi (di tengah meja) tidak berlaku di dalam lubang
+        if (m.name === 'PocketDark') m.envMapIntensity = 0;
+        if (m.name === 'PocketLeather') m.envMapIntensity = 0.25;
         if (m.name === 'Cloth' && pm.isMeshPhysicalMaterial) {
           pm.sheen = 0.18;
           pm.sheenColor.setRGB(0.25, 0.45, 0.7);
           pm.sheenRoughness = 0.6;
         }
-        this.patchMaterial(m, 1);
+        // bodi di bawah meja: probe (di atas kain) tidak mewakili pencahayaan di sana
+        const under = m.name === 'BodyLacquer';
+        if (under) m.envMapIntensity = 0.12;
+        this.patchMaterial(m, under ? 0.25 : 1);
       }
     });
 
@@ -195,6 +203,7 @@ export class World {
       shader.uniforms.iblDiffuseScale = { value: iblDiffuseScale };
     };
     m.customProgramCacheKey = () => 'ibl-split';
+    m.needsUpdate = true;
   }
 
   /** Daftarkan material tambahan (dibuat di luar World) agar memakai IBL terpisah. */
@@ -284,8 +293,9 @@ export class World {
     this.dof.cocMaterial.worldFocusDistance = focusDistance;
   }
 
-  setOverheadHidden(hidden: boolean): void {
-    for (const o of this.overhead) o.visible = !hidden;
+  setOverheadHidden(lampHidden: boolean, ceilingHidden: boolean): void {
+    for (const o of this.lampObjs) o.visible = !lampHidden;
+    if (this.ceilingObj) this.ceilingObj.visible = !ceilingHidden;
   }
 
   resize(w: number, h: number): void {
