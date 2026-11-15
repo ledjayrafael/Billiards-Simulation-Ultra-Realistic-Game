@@ -1,0 +1,342 @@
+import { CUE_MAX_SPEED } from '@billiards/physics';
+import { ballsOnTable, lowestBall } from '@billiards/rules';
+import type { MatchOptions } from '@billiards/shared';
+import type { Game } from '../game/game';
+import { saveSettings, type Settings } from '../game/settings';
+
+const BALL_COLORS = ['#f4f1e6', '#f2c12e', '#1f55b5', '#d12a20', '#5c2d91', '#f07a1c', '#1f8a4c', '#8a2424', '#1a1a1a', '#f2c12e'];
+const DEG = 180 / Math.PI;
+
+export interface HudApp {
+  startMatch(options: Partial<MatchOptions>): void;
+  applySettings(): void;
+  quitToMenu(): void;
+  resume(): void;
+  nextRack(): void;
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html) e.innerHTML = html;
+  return e;
+}
+const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+/** HUD + menu (DOM di atas canvas). */
+export class Hud {
+  readonly root = el('div');
+  private hudLayer = el('div');
+  private score = el('div', 'score');
+  private rail = el('div', 'rail');
+  private status = el('div', 'status');
+  private toasts = el('div', 'toasts');
+  private spin = el('div', 'spin interactive');
+  private spinDot = el('div', 'dot');
+  private spinTxt = el('small');
+  private elevArc = el('i');
+  private elevTxt = el('span');
+  private power = el('div', 'power');
+  private powerFill = el('i');
+  private powerTxt = el('div', 'txt');
+  private actions = el('div', 'actions interactive');
+  private hint = el('div', 'hint');
+  private overlay = el('div');
+  private sheet = el('div');
+  private fps = el('div', 'fps');
+  private menuOptions: MatchOptions = { playerNames: ['Pemain 1', 'Pemain 2'], raceTo: 5, threeFoulRule: true, alternateBreak: false };
+  sheetOpen: 'menu' | 'pause' | 'rack' | 'match' | null = null;
+  pointerLocked = false;
+
+  constructor(
+    private game: Game,
+    private settings: Settings,
+    private app: HudApp,
+  ) {
+    this.root.id = 'ui';
+    document.body.appendChild(this.root);
+    this.spin.innerHTML = '<div class="ball"></div>';
+    const ball = this.spin.firstElementChild as HTMLElement;
+    ball.appendChild(this.spinDot);
+    const elev = el('div', 'elev', '<div class="arc"></div>');
+    elev.firstElementChild!.appendChild(this.elevArc);
+    elev.appendChild(this.elevTxt);
+    this.spin.append(this.spinTxt, elev);
+    this.power.innerHTML = '<div class="bar"></div>';
+    this.power.firstElementChild!.appendChild(this.powerFill);
+    this.power.appendChild(this.powerTxt);
+    this.powerTxt.innerHTML =
+      '<kbd>Klik kiri</kbd> tahan, tarik mundur lalu dorong<br><kbd>Space</kbd> tahan/lepas: power bar<br><kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi';
+    this.hudLayer.append(this.score, this.rail, this.status, this.toasts, this.spin, this.power, this.hint, this.actions, this.fps);
+    this.root.append(this.hudLayer, this.overlay, this.sheet);
+
+    // spin widget: klik/drag
+    const setFromEvent = (e: PointerEvent): void => {
+      const r = ball.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const y = -(((e.clientY - r.top) / r.height) * 2 - 1);
+      this.game.setTip(x, y);
+    };
+    ball.addEventListener('pointerdown', (e) => {
+      ball.setPointerCapture(e.pointerId);
+      setFromEvent(e);
+    });
+    ball.addEventListener('pointermove', (e) => {
+      if (e.buttons & 1) setFromEvent(e);
+    });
+    ball.addEventListener('dblclick', () => this.game.setTip(0, 0));
+
+    game.on('change', () => this.refresh());
+    game.on('toast', (t) => this.toast(t.text, t.kind));
+    game.on('turn', (t) => this.turnOverlay(t.player, t.reason));
+    game.on('rackOver', (r) => this.showRackOver(r.winner, r.matchOver));
+    this.refresh();
+  }
+
+  setFps(text: string): void {
+    this.fps.textContent = text;
+  }
+
+  toast(text: string, kind: 'info' | 'foul' | 'good' = 'info'): void {
+    const t = el('div', `toast ${kind}`);
+    t.textContent = text;
+    this.toasts.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+
+  private turnOverlay(player: number, reason: string): void {
+    const m = this.game.match;
+    if (!m) return;
+    this.overlay.innerHTML = '';
+    const o = el('div', 'turn', `<div><small>Giliran</small><h2>${esc(m.options.playerNames[player])}</h2>${reason ? `<p>${esc(reason)}</p>` : ''}</div>`);
+    this.overlay.appendChild(o);
+    setTimeout(() => o.remove(), 1950);
+  }
+
+  /** Dipanggil tiap frame untuk elemen yang berubah terus (power, spin). */
+  tick(): void {
+    const g = this.game;
+    const p = g.powerActive ? g.power : g.pull / 0.3;
+    this.powerFill.style.height = `${Math.round(p * 100)}%`;
+  }
+
+  refresh(): void {
+    const g = this.game;
+    const m = g.match;
+    const inGame = !!m && this.sheetOpen !== 'menu';
+    this.hudLayer.classList.toggle('hidden', !inGame);
+    if (!m) return;
+    const names = m.options.playerNames;
+    const fouls = (n: number): string => (n > 0 && m.options.threeFoulRule ? `<span class="fouls">${'<i></i>'.repeat(n)}</span>` : '');
+    const sub = (i: number): string => (m.breaker === i && m.phase === 'break' ? 'break' : '');
+    this.score.innerHTML = `
+      <div class="player p1 ${m.currentPlayer === 0 ? 'active' : ''}"><div><div class="name">${esc(names[0])}${fouls(m.consecutiveFouls[0])}</div><div class="sub">${sub(0)}</div></div><div class="pts">${m.scores[0]}</div></div>
+      <div class="mid">race to<b>${m.options.raceTo}</b></div>
+      <div class="player p2 ${m.currentPlayer === 1 ? 'active' : ''}"><div><div class="name">${fouls(m.consecutiveFouls[1])}${esc(names[1])}</div><div class="sub">${sub(1)}</div></div><div class="pts">${m.scores[1]}</div></div>`;
+    const on = new Set(ballsOnTable(m.table));
+    const target = lowestBall(m.table);
+    this.rail.innerHTML = Array.from({ length: 9 }, (_, i) => i + 1)
+      .map((n) => `<div class="b ${n === 9 ? 'stripe' : ''} ${on.has(n) ? '' : 'down'} ${n === target ? 'target' : ''}" style="--c:${BALL_COLORS[n]}" data-n="${n}"></div>`)
+      .join('');
+
+    // status
+    let st = '';
+    if (g.mode === 'aim') {
+      if (m.phase === 'break') st = '<b>Break</b> — seret cue ball di belakang head string, lalu bidik';
+      else if (m.ballInHand === 'anywhere') st = '<b>Ball in hand</b> — seret cue ball ke mana saja';
+      else if (g.pushOutArmed) st = '<b>Push-out</b> dinyatakan — pukulan ini tidak wajib mengenai bola';
+      else if (m.pushOutAvailable) st = `Bola target: <b>${target}</b> · push-out tersedia`;
+      else st = `Bola target: <b>${target}</b>`;
+    } else if (g.mode === 'decision') st = `<b>${esc(names[m.currentPlayer])}</b>: main dari posisi ini, atau kembalikan giliran?`;
+    else if (g.mode === 'replay') st = `<b>Replay</b> ${g.playSpeed < 1 ? '· slow-motion ' + g.playSpeed + '×' : ''}`;
+    this.status.innerHTML = st;
+
+    // spin & elevasi
+    this.spinDot.style.left = `${50 + g.tipX * 50}%`;
+    this.spinDot.style.top = `${50 - g.tipY * 50}%`;
+    const off = Math.hypot(g.tipX, g.tipY);
+    this.spinDot.classList.toggle('miscue', off > 0.5);
+    this.spinTxt.textContent = off > 0.5 ? 'risiko miscue!' : off < 0.02 ? 'center ball' : `spin ${g.tipX >= 0 ? 'kanan' : 'kiri'} ${Math.abs(g.tipX * 100).toFixed(0)}% · ${g.tipY >= 0 ? 'atas' : 'bawah'} ${Math.abs(g.tipY * 100).toFixed(0)}%`;
+    const ev = g.mode === 'aim' ? g.effectiveElevation() : g.elevation;
+    this.elevArc.style.transform = `rotate(${-ev * DEG}deg)`;
+    this.elevTxt.textContent = `elevasi ${(ev * DEG).toFixed(0)}°`;
+    const aiming = g.mode === 'aim';
+    this.spin.classList.toggle('hidden', !aiming);
+    this.power.classList.toggle('hidden', !aiming);
+
+    // tombol
+    this.actions.innerHTML = '';
+    const btn = (label: string, fn: () => void, cls = ''): void => {
+      const b = el('button', cls);
+      b.innerHTML = label;
+      b.onclick = (e) => {
+        e.stopPropagation();
+        fn();
+        b.blur();
+      };
+      this.actions.appendChild(b);
+    };
+    if (g.mode === 'aim') {
+      if (m.pushOutAvailable) btn(g.pushOutArmed ? 'Batalkan push-out' : 'Push-out', () => g.togglePushOut(), g.pushOutArmed ? 'on' : '');
+      if (g.canReplay) btn('Replay <kbd>P</kbd>', () => g.startReplay(1));
+      btn('Tampak atas <kbd>T</kbd>', () => g.rig.toggleTop());
+      btn('Menu <kbd>Esc</kbd>', () => this.showPause());
+    } else if (g.mode === 'decision') {
+      btn('Main dari sini', () => g.decidePushOut(true), 'primary');
+      btn('Kembalikan giliran', () => g.decidePushOut(false));
+    } else if (g.mode === 'replay') {
+      btn(g.playSpeed < 1 ? 'Kecepatan normal' : 'Slow-motion 0.25×', () => {
+        g.playSpeed = g.playSpeed < 1 ? 1 : 0.25;
+        this.refresh();
+      });
+      btn('Selesai', () => g.stopReplay(), 'primary');
+    }
+    this.hint.textContent =
+      g.mode === 'aim' ? (this.pointerLocked ? 'Gerakkan mouse untuk membidik · Shift = bidik halus · Esc = lepas kursor' : 'Klik meja untuk membidik dengan mouse · ←/→ juga bisa') : '';
+  }
+
+  // ───────────── sheet: menu / pause / rack / match ─────────────
+
+  private closeSheet(): void {
+    this.sheet.innerHTML = '';
+    this.sheet.className = '';
+    this.sheetOpen = null;
+    this.refresh();
+  }
+
+  private settingsRows(): string {
+    const s = this.settings;
+    const opt = (v: string, label: string, cur: string): string => `<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
+    return `
+      <h3>Pengaturan</h3>
+      <div class="row"><label>Grafis</label><select data-s="quality">${opt('low', 'Low', s.quality)}${opt('medium', 'Medium', s.quality)}${opt('high', 'High', s.quality)}${opt('ultra', 'Ultra', s.quality)}</select></div>
+      <div class="row"><label>Garis bidik</label><select data-s="guide">${opt('on', 'On (dengan arah bola)', s.guide)}${opt('short', 'Pendek', s.guide)}${opt('off', 'Off', s.guide)}</select></div>
+      <div class="row"><label>Volume</label><input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-s="volume"></div>
+      <div class="row"><label>Ambience ruangan</label><input type="checkbox" ${s.ambience ? 'checked' : ''} data-s="ambience"></div>
+      <div class="row"><label>Sensitivitas mouse</label><input type="range" min="0.4" max="2" step="0.05" value="${s.sensitivity}" data-s="sensitivity"></div>`;
+  }
+
+  private bindSettings(card: HTMLElement): void {
+    card.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-s]').forEach((inp) => {
+      inp.addEventListener('input', () => {
+        const k = inp.dataset.s as keyof Settings;
+        const s = this.settings as unknown as Record<string, unknown>;
+        if (inp instanceof HTMLInputElement && inp.type === 'checkbox') s[k] = inp.checked;
+        else if (inp instanceof HTMLInputElement && inp.type === 'range') s[k] = +inp.value;
+        else s[k] = inp.value;
+        saveSettings(this.settings);
+        this.app.applySettings();
+      });
+    });
+  }
+
+  private open(kind: NonNullable<Hud['sheetOpen']>, html: string, clear = false): HTMLElement {
+    this.sheet.className = `sheet interactive ${clear ? 'clear' : ''}`;
+    this.sheet.innerHTML = `<div class="card">${html}</div>`;
+    this.sheetOpen = kind;
+    this.refresh();
+    return this.sheet.firstElementChild as HTMLElement;
+  }
+
+  showMenu(): void {
+    const o = this.menuOptions;
+    const card = this.open(
+      'menu',
+      `<h1>NINE<span>.</span></h1><div class="tag">Simulator biliar 9-ball</div>
+      <h3>Pemain</h3>
+      <div class="row"><label>Pemain 1</label><input type="text" maxlength="16" value="${esc(o.playerNames[0])}" data-p="0"></div>
+      <div class="row"><label>Pemain 2</label><input type="text" maxlength="16" value="${esc(o.playerNames[1])}" data-p="1"></div>
+      <h3>Aturan</h3>
+      <div class="row"><label>Race to</label><div class="stepper"><button data-r="-1">−</button><b>${o.raceTo}</b><button data-r="1">+</button></div></div>
+      <div class="row"><label>Kalah rack setelah 3 foul beruntun</label><input type="checkbox" ${o.threeFoulRule ? 'checked' : ''} data-o="threeFoulRule"></div>
+      <div class="row"><label>Break bergantian</label><input type="checkbox" ${o.alternateBreak ? 'checked' : ''} data-o="alternateBreak"></div>
+      ${this.settingsRows()}
+      <button class="primary go">Mulai pertandingan</button>
+      <div class="help"><kbd>Mouse</kbd> bidik · <kbd>Klik kiri</kbd> tarik &amp; dorong untuk memukul · <kbd>Space</kbd> power bar · <kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi · <kbd>Klik kanan</kbd> orbit · <kbd>Scroll</kbd> zoom · <kbd>T</kbd> tampak atas · <kbd>R</kbd> reset kamera · <kbd>P</kbd> replay</div>`,
+      true,
+    );
+    card.querySelectorAll<HTMLInputElement>('[data-p]').forEach((i) => i.addEventListener('input', () => (o.playerNames[+i.dataset.p!] = i.value.trim() || `Pemain ${+i.dataset.p! + 1}`)));
+    card.querySelectorAll<HTMLButtonElement>('[data-r]').forEach((b) => (b.onclick = () => {
+      o.raceTo = Math.min(11, Math.max(1, o.raceTo + +b.dataset.r!));
+      card.querySelector('.stepper b')!.textContent = String(o.raceTo);
+    }));
+    card.querySelectorAll<HTMLInputElement>('[data-o]').forEach((i) => i.addEventListener('input', () => ((o as unknown as Record<string, boolean>)[i.dataset.o!] = i.checked)));
+    this.bindSettings(card);
+    (card.querySelector('.go') as HTMLButtonElement).onclick = () => {
+      this.closeSheet();
+      this.app.startMatch({ ...o, playerNames: [o.playerNames[0], o.playerNames[1]] });
+    };
+  }
+
+  showPause(): void {
+    if (this.sheetOpen || !this.game.match) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const card = this.open('pause', `<h2>Jeda</h2>${this.settingsRows()}<div class="two"><button class="quit">Keluar ke menu</button><button class="primary resume">Lanjutkan</button></div>`);
+    this.bindSettings(card);
+    (card.querySelector('.resume') as HTMLButtonElement).onclick = () => this.hidePause();
+    (card.querySelector('.quit') as HTMLButtonElement).onclick = () => {
+      this.closeSheet();
+      this.app.quitToMenu();
+    };
+  }
+  hidePause(): void {
+    if (this.sheetOpen !== 'pause') return;
+    this.closeSheet();
+    this.app.resume();
+  }
+
+  private showRackOver(winner: number, matchOver: boolean): void {
+    const m = this.game.match!;
+    const name = esc(m.options.playerNames[winner]);
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (matchOver) {
+      const card = this.open(
+        'match',
+        `<div class="tag" style="margin:0 0 8px">Pertandingan selesai</div><h2>${name} menang!</h2>
+         <div class="final">${m.scores[0]}<span>–</span>${m.scores[1]}</div>
+         <div style="color:var(--muted)">${esc(m.options.playerNames[0])} vs ${esc(m.options.playerNames[1])} · race to ${m.options.raceTo}</div>
+         <div class="two"><button class="menu">Menu utama</button><button class="primary again">Main lagi</button></div>`,
+        true,
+      );
+      (card.querySelector('.again') as HTMLButtonElement).onclick = () => {
+        this.closeSheet();
+        this.app.startMatch({ ...m.options });
+      };
+      (card.querySelector('.menu') as HTMLButtonElement).onclick = () => {
+        this.closeSheet();
+        this.app.quitToMenu();
+      };
+    } else {
+      const card = this.open(
+        'rack',
+        `<div class="tag" style="margin:0 0 8px">Rack ${m.rackNumber} selesai</div><h2>${name} menang rack</h2>
+         <div class="final">${m.scores[0]}<span>–</span>${m.scores[1]}</div>
+         <button class="primary go">Rack berikutnya</button>`,
+        true,
+      );
+      (card.querySelector('.go') as HTMLButtonElement).onclick = () => {
+        this.closeSheet();
+        this.app.nextRack();
+      };
+    }
+  }
+}
+
+export function createLoading(): { set(f: number, label: string): void; done(): void } {
+  const root = el('div', 'loading', '<div><h1>NINE<span>.</span></h1><div class="track"><i></i></div><p>memuat…</p></div>');
+  document.body.appendChild(root);
+  const bar = root.querySelector('i') as HTMLElement;
+  const p = root.querySelector('p') as HTMLElement;
+  return {
+    set(f, label) {
+      bar.style.width = `${Math.round(f * 100)}%`;
+      p.textContent = label;
+    },
+    done() {
+      root.classList.add('done');
+      setTimeout(() => root.remove(), 900);
+    },
+  };
+}
+
+export const MAX_CUE_SPEED = CUE_MAX_SPEED;

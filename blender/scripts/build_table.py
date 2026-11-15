@@ -269,6 +269,7 @@ def build():
     # 6. bodi: apron, panel bawah, kaki
     body_parts = []
     ap = C.prism("apron", C.rounded_rect(hx - 0.022, hy - 0.022, 0.07, 8), -0.235, zb)
+    cut_all(ap, cutters(0.008, 40))  # ruang untuk kantong pocket
     C.bevel(ap, 0.006, 3, 50)
     body_parts.append(ap)
     floor_z = -T["surfaceHeight"]
@@ -306,6 +307,7 @@ def build():
 
     # garis kuningan tipis di bawah rail
     trim = C.prism("Table_Trim", C.rounded_rect(hx - 0.016, hy - 0.016, 0.075, 8), zb - 0.006, zb + 0.001)
+    cut_all(trim, cutters(0.008, 40))
     C.box_uv(trim, 1.0)
     C.shade_smooth(trim, 40)
     C.assign(trim, M["metal"])

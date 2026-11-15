@@ -15,6 +15,9 @@ for (const s of steps) {
   if (s.wait) await page.waitForTimeout(s.wait);
   if (s.size) await page.setViewportSize({ width: s.size[0], height: s.size[1] });
   if (s.key) await page.keyboard.press(s.key);
+  if (s.keydown) await page.keyboard.down(s.keydown);
+  if (s.keyup) await page.keyboard.up(s.keyup);
+  if (s.mouse) { const [op, x, y, steps] = s.mouse; if (op === 'move') await page.mouse.move(x, y, { steps: steps ?? 1 }); if (op === 'down') await page.mouse.down({ button: x ?? 'left' }); if (op === 'up') await page.mouse.up({ button: x ?? 'left' }); if (op === 'wheel') await page.mouse.wheel(0, x); }
   if (s.eval) { const r = await page.evaluate(s.eval); if (r !== undefined && r !== null) console.log('→', JSON.stringify(r)); }
   if (s.shot) await page.screenshot({ path: s.shot });
   if (s.fps) { const r = await page.evaluate((ms) => new Promise((res) => { let n = 0, worst = 0, prev = performance.now(); const t0 = prev; const f = (t) => { n++; worst = Math.max(worst, t - prev); prev = t; if (t - t0 > ms) res({ fps: +((n * 1000) / (t - t0)).toFixed(1), worstFrameMs: +worst.toFixed(1) }); else requestAnimationFrame(f); }; requestAnimationFrame(f); }), s.fps); console.log('fps', JSON.stringify(r)); }

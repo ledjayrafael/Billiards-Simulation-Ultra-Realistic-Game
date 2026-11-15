@@ -1,79 +1,102 @@
+import * as THREE from 'three';
+import { rackNineBall } from '@billiards/rules';
+import type { MatchOptions } from '@billiards/shared';
+import { Controls } from '../input/controls';
 import { loadAssets } from '../render/assets';
 import { World, type Quality } from '../render/world';
+import { createLoading, Hud } from '../ui/hud';
+import '../ui/style.css';
 import { Game } from './game';
 import { loadSettings } from './settings';
 
-document.body.style.cssText = 'margin:0;overflow:hidden;background:#000;font:13px system-ui,sans-serif;color:#dde';
+const params = new URLSearchParams(location.search);
+const loading = createLoading();
 const canvas = document.createElement('canvas');
-canvas.style.cssText = 'width:100vw;height:100vh;display:block';
+canvas.id = 'view';
 document.body.appendChild(canvas);
 
 const settings = loadSettings();
-const q = new URLSearchParams(location.search).get('q') as Quality | null;
+const q = params.get('q') as Quality | null;
 if (q) settings.quality = q;
-const assets = await loadAssets(() => {});
-const world = new World(canvas, assets, settings.quality);
-const game = new Game(world, settings);
-world.resize(innerWidth, innerHeight);
-await world.warmUp();
-game.startMatch({});
-game.rig.snap({ cueX: game.cueBall.x, cueY: game.cueBall.y, aimDir: game.aimDir, focusX: 0, focusY: 0 });
 
-// ── panel debug sementara (M3) ──
-const panel = document.createElement('div');
-panel.style.cssText = 'position:fixed;left:10px;bottom:10px;background:rgba(10,12,16,.75);padding:8px 10px;border-radius:8px;display:grid;gap:4px;width:250px';
-panel.innerHTML = `
-<label>kecepatan <input id="d-speed" type="range" min="0.3" max="9" step="0.1" value="8.5"> </label>
-<label>tip X <input id="d-tx" type="range" min="-0.6" max="0.6" step="0.01" value="0"></label>
-<label>tip Y <input id="d-ty" type="range" min="-0.6" max="0.6" step="0.01" value="0"></label>
-<label>elevasi <input id="d-el" type="range" min="0" max="80" step="1" value="0"></label>
-<div><button id="d-shoot">Pukul (Enter)</button> <button id="d-top">Top (T)</button> <button id="d-replay">Replay (P)</button></div>
-<div id="d-info"></div><div style="opacity:.6">←/→ bidik (Shift = halus), scroll = zoom</div>`;
-document.body.appendChild(panel);
-const val = (id: string): number => +(document.getElementById(id) as HTMLInputElement).value;
-const shoot = (): void => {
-  game.tipX = val('d-tx');
-  game.tipY = val('d-ty');
-  game.elevation = (val('d-el') * Math.PI) / 180;
-  game.fire(val('d-speed'));
-};
-document.getElementById('d-shoot')!.onclick = shoot;
-document.getElementById('d-top')!.onclick = () => game.rig.toggleTop();
-document.getElementById('d-replay')!.onclick = () => game.startReplay(0.25);
-const held = new Set<string>();
-addEventListener('keydown', (e) => {
-  held.add(e.code);
-  if (e.code === 'Enter') shoot();
-  if (e.code === 'KeyT') game.rig.toggleTop();
-  if (e.code === 'KeyP') game.startReplay(0.25);
-  if (e.code === 'KeyR') game.rig.reset();
-});
-addEventListener('keyup', (e) => held.delete(e.code));
-addEventListener('wheel', (e) => game.rig.zoom(e.deltaY * 0.001), { passive: true });
-addEventListener('resize', () => world.resize(innerWidth, innerHeight));
+try {
+  const assets = await loadAssets((f, label) => loading.set(f * 0.85, `memuat ${label}…`));
+  loading.set(0.9, 'menyiapkan shader…');
+  const world = new World(canvas, assets, settings.quality);
+  const game = new Game(world, settings);
+  world.resize(innerWidth, innerHeight);
 
-const info = document.getElementById('d-info')!;
-let last = performance.now();
-let frames = 0;
-let acc = 0;
-let fps = 0;
-function frame(now: number): void {
-  const dt = Math.min(0.1, (now - last) / 1000);
-  last = now;
-  const rate = held.has('ShiftLeft') || held.has('ShiftRight') ? 0.05 : 0.9;
-  if (held.has('ArrowLeft')) game.aimBy(rate * dt);
-  if (held.has('ArrowRight')) game.aimBy(-rate * dt);
-  game.update(dt);
-  world.render(dt);
-  frames++;
-  acc += dt;
-  if (acc >= 0.5) {
-    fps = frames / acc;
-    frames = 0;
-    acc = 0;
-    info.textContent = `${fps.toFixed(0)} fps · ${game.mode} · sim ${game.lastSimMs.toFixed(1)} ms · ${world.renderer.info.render.triangles} tris`;
-  }
+  let appliedQuality = settings.quality;
+  const showcase = (): void => {
+    game.ballViews.setTable(rackNineBall(7).table);
+    game.rig.playCinematic('Cam_Intro', { loop: true, timeScale: 0.6 });
+  };
+  const breakIntro = (): void => {
+    game.rig.playCinematic('Cam_BreakPrep');
+  };
+  const hud: Hud = new Hud(game, settings, {
+    startMatch(options: Partial<MatchOptions>) {
+      game.rig.stopCinematic();
+      game.startMatch(options);
+      breakIntro();
+    },
+    applySettings() {
+      if (settings.quality !== appliedQuality) {
+        appliedQuality = settings.quality;
+        world.setQuality(settings.quality);
+      }
+      game.guide.mode = settings.guide;
+    },
+    quitToMenu() {
+      game.quitMatch();
+      showcase();
+      hud.showMenu();
+    },
+    resume() {},
+    nextRack() {
+      game.rig.stopCinematic();
+      game.continueAfterRack();
+      breakIntro();
+    },
+  });
+  const controls = new Controls(canvas, game, hud, settings);
+  game.on('rackOver', () => game.rig.playCinematic('Cam_RackWin', { loop: true }));
+
+  showcase();
+  game.rig.snap({ cueX: -0.75, cueY: 0, aimDir: 0, focusX: 0, focusY: 0 });
+  await world.warmUp();
+  loading.set(1, 'siap');
+  hud.showMenu();
+  loading.done();
+
+  addEventListener('resize', () => world.resize(innerWidth, innerHeight));
+  const showFps = params.has('fps');
+  let last = performance.now();
+  let frames = 0;
+  let acc = 0;
+  let fps = 0;
+  const frame = (now: number): void => {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    controls.update(dt);
+    // __timeScale: percepatan untuk pengujian otomatis
+    game.update(dt * ((window as unknown as { __timeScale?: number }).__timeScale ?? 1));
+    world.setCinematicDof(game.rig.cinematic && hud.sheetOpen !== null && hud.sheetOpen !== 'pause', 2.6);
+    hud.tick();
+    world.render(dt);
+    frames++;
+    acc += dt;
+    if (acc >= 0.5) {
+      fps = frames / acc;
+      frames = 0;
+      acc = 0;
+      if (showFps) hud.setFps(`${fps.toFixed(0)} fps · sim ${game.lastSimMs.toFixed(1)} ms`);
+    }
+    requestAnimationFrame(frame);
+  };
   requestAnimationFrame(frame);
+  Object.assign(window, { __THREE: THREE, __game: game, __world: world, __hud: hud, __fps: () => fps });
+} catch (err) {
+  loading.set(0, `Gagal memuat: ${(err as Error).message}`);
+  console.error(err);
 }
-requestAnimationFrame(frame);
-Object.assign(window, { __game: game, __world: world, __fps: () => fps });

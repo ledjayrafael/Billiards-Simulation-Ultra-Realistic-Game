@@ -69,6 +69,7 @@ export class World {
   private dofPass: EffectPass | null = null;
   private quality: Quality = 'high';
   private envDiffuseTex: THREE.Texture;
+  private envReflectTex: THREE.Texture;
   private width = 1;
   private height = 1;
 
@@ -98,6 +99,7 @@ export class World {
     const envReflect = pmrem.fromEquirectangular(assets.envReflect).texture;
     this.envDiffuseTex = pmrem.fromEquirectangular(assets.envDiffuse).texture;
     pmrem.dispose();
+    this.envReflectTex = envReflect;
     this.scene.environment = envReflect;
     this.scene.background = new THREE.Color(0x020203);
 
@@ -198,6 +200,10 @@ export class World {
 
   private patchMaterial(m: THREE.Material, iblDiffuseScale: number): void {
     const tex = this.envDiffuseTex;
+    // envMap eksplisit: material.envMapIntensity hanya berlaku bila envMap diset per material
+    // (untuk scene.environment three.js memakai scene.environmentIntensity).
+    const std = m as THREE.MeshStandardMaterial;
+    if (std.isMeshStandardMaterial) std.envMap = this.envReflectTex;
     m.onBeforeCompile = (shader) => {
       shader.uniforms.envMapDiffuse = { value: tex };
       shader.uniforms.iblDiffuseScale = { value: iblDiffuseScale };
