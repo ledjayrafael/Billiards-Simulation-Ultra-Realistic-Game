@@ -98,6 +98,7 @@ export class Game {
   private strokeDur = 0.1;
   private strokeFrom = 0;
   private followT = 0;
+  private followMin = Infinity;
   private powerT = 0;
   private shotIsBreak = false;
   private focus: [number, number] = [0, 0];
@@ -345,6 +346,7 @@ export class Game {
     this.playT = 0;
     this.eventCursor = 0;
     this.followT = 0;
+    this.followMin = Infinity;
     this.ballViews.resetPlayback();
     this.rig.startShot(this.context(), this.shotIsBreak);
     const first = res.events[0];
@@ -447,6 +449,10 @@ export class Game {
         // follow-through stik lalu menghilang
         if (this.mode === 'play' && this.cueView.visible) {
           this.followT += dt;
+          // sembunyikan juga bila cue ball berbalik ke arah stik (draw kuat)
+          const d = this.cueView.tipDistance(cueMesh.position);
+          if (d < this.followMin - 0.002) this.cueView.visible = false;
+          this.followMin = Math.min(this.followMin, d);
           if (this.followT > 0.45) this.cueView.visible = false;
         }
         if (this.playT >= res.duration + (this.mode === 'play' ? 0.35 : 0.8)) {
