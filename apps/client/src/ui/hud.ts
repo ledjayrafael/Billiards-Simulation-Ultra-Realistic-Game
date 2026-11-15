@@ -266,11 +266,11 @@ export class Hud {
     this.refresh();
   }
 
-  private settingsRows(): string {
+  private settingsRows(heading = true): string {
     const s = this.settings;
     const opt = (v: string, label: string, cur: string): string => `<option value="${v}" ${v === cur ? 'selected' : ''}>${label}</option>`;
     return `
-      <h3>Pengaturan</h3>
+      ${heading ? '<h3>Pengaturan</h3>' : ''}
       <div class="row"><label>Grafis</label><select data-s="quality">${opt('low', 'Low', s.quality)}${opt('medium', 'Medium', s.quality)}${opt('high', 'High', s.quality)}${opt('ultra', 'Ultra', s.quality)}</select></div>
       <div class="row"><label>Garis bidik</label><select data-s="guide">${opt('on', 'On (dengan arah bola)', s.guide)}${opt('short', 'Pendek', s.guide)}${opt('off', 'Off', s.guide)}</select></div>
       <div class="row"><label>Volume</label><input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-s="volume"></div>
@@ -292,9 +292,9 @@ export class Hud {
     });
   }
 
-  private open(kind: NonNullable<Hud['sheetOpen']>, html: string, clear = false): HTMLElement {
+  private open(kind: NonNullable<Hud['sheetOpen']>, html: string, clear = false, cls = ''): HTMLElement {
     this.sheet.className = `sheet interactive ${clear ? 'clear' : ''}`;
-    this.sheet.innerHTML = `<div class="card">${html}</div>`;
+    this.sheet.innerHTML = `<div class="card ${cls}">${html}</div>`;
     this.sheetOpen = kind;
     this.refresh();
     return this.sheet.firstElementChild as HTMLElement;
@@ -304,19 +304,35 @@ export class Hud {
     const o = this.menuOptions;
     const card = this.open(
       'menu',
-      `<h1 class="brand"><img src="/brand/openbilliard-320.png" alt="Open Billiard"></h1><div class="tag">Simulator biliar 9-ball</div>
-      <h3>Pemain</h3>
-      <div class="row"><label>Pemain 1</label><input type="text" maxlength="16" value="${esc(o.playerNames[0])}" data-p="0"></div>
-      <div class="row"><label>Pemain 2</label><input type="text" maxlength="16" value="${esc(o.playerNames[1])}" data-p="1"></div>
-      <h3>Aturan</h3>
-      <div class="row"><label>Race to</label><div class="stepper"><button data-r="-1">−</button><b>${o.raceTo}</b><button data-r="1">+</button></div></div>
-      <div class="row"><label>Kalah rack setelah 3 foul beruntun</label><input type="checkbox" ${o.threeFoulRule ? 'checked' : ''} data-o="threeFoulRule"></div>
-      <div class="row"><label>Break bergantian</label><input type="checkbox" ${o.alternateBreak ? 'checked' : ''} data-o="alternateBreak"></div>
-      ${this.settingsRows()}
-      <button class="primary go">Mulai pertandingan</button>
-      <div class="help"><kbd>Mouse</kbd> bidik · <kbd>Klik kiri</kbd> tarik &amp; dorong untuk memukul · <kbd>Space</kbd> kunci bidikan, atur power, Space lagi memukul · <kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi · <kbd>Klik kanan</kbd> orbit · <kbd>Scroll</kbd> zoom · <kbd>T</kbd> tampak atas · <kbd>R</kbd> reset kamera · <kbd>P</kbd> replay</div>`,
+      `<header class="hero">
+        <img src="/brand/openbilliard-320.png" alt="Open Billiard">
+        <div class="tag"><i></i>Simulator biliar 9-ball<i></i></div>
+      </header>
+      <nav class="tabs" role="tablist">
+        <button class="on" data-tab="match" role="tab">Pertandingan</button><button data-tab="settings" role="tab">Pengaturan</button><button data-tab="help" role="tab">Kontrol</button>
+      </nav>
+      <div class="panes">
+        <section data-pane="match">
+          <div class="versus">
+            <label><small>Pemain 1</small><input type="text" maxlength="16" value="${esc(o.playerNames[0])}" data-p="0"></label>
+            <b>VS</b>
+            <label><small>Pemain 2</small><input type="text" maxlength="16" value="${esc(o.playerNames[1])}" data-p="1"></label>
+          </div>
+          <div class="race"><div><small>Race to</small><span>Rack untuk menang</span></div><div class="stepper"><button data-r="-1" aria-label="Kurangi">−</button><b>${o.raceTo}</b><button data-r="1" aria-label="Tambah">+</button></div></div>
+          <div class="row"><label>Kalah rack setelah 3 foul beruntun</label><input type="checkbox" ${o.threeFoulRule ? 'checked' : ''} data-o="threeFoulRule"></div>
+          <div class="row"><label>Break bergantian</label><input type="checkbox" ${o.alternateBreak ? 'checked' : ''} data-o="alternateBreak"></div>
+        </section>
+        <section data-pane="settings" hidden>${this.settingsRows(false)}</section>
+        <section data-pane="help" class="keys" hidden><div><kbd>Mouse</kbd><span>Bidik</span></div><div><kbd>Shift</kbd><span>Bidik halus</span></div><div><kbd>Klik kiri</kbd><span>Tarik &amp; dorong = pukul</span></div><div><kbd>Space</kbd><span>Kunci bidikan · power · pukul</span></div><div><kbd>W A S D</kbd><span>Titik pukul (spin)</span></div><div><kbd>Q / E</kbd><span>Elevasi stik</span></div><div><kbd>Klik kanan</kbd><span>Orbit kamera</span></div><div><kbd>Scroll</kbd><span>Zoom</span></div><div><kbd>T</kbd><span>Tampak atas</span></div><div><kbd>R</kbd><span>Reset kamera</span></div><div><kbd>P</kbd><span>Replay</span></div><div><kbd>C</kbd><span>Titik pukul ke tengah</span></div></section>
+      </div>
+      <button class="primary go"><span>Mulai pertandingan</span><i>→</i></button>`,
       true,
+      'menu',
     );
+    card.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((t) => (t.onclick = () => {
+      card.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((x) => x.classList.toggle('on', x === t));
+      card.querySelectorAll<HTMLElement>('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== t.dataset.tab));
+    }));
     card.querySelectorAll<HTMLInputElement>('[data-p]').forEach((i) => i.addEventListener('input', () => (o.playerNames[+i.dataset.p!] = i.value.trim() || `Pemain ${+i.dataset.p! + 1}`)));
     card.querySelectorAll<HTMLButtonElement>('[data-r]').forEach((b) => (b.onclick = () => {
       o.raceTo = Math.min(11, Math.max(1, o.raceTo + +b.dataset.r!));
