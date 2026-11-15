@@ -88,6 +88,18 @@ button.on { border-color: var(--brass); color: var(--brass); }
 .turn p { margin: 8px 0 0; color: var(--ivory); opacity: 0.85; }
 @keyframes turn { 0% { opacity: 0; } 12%, 72% { opacity: 1; } 100% { opacity: 0; } }
 
+.replay-title { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 9, 0.55); animation: replay-title 1.6s forwards; }
+.replay-title::before, .replay-title::after { content: ''; position: absolute; left: 0; right: 0; height: 11vh; background: #000; animation: inherit; animation-name: replay-bars; }
+.replay-title::before { top: 0; transform-origin: top; }
+.replay-title::after { bottom: 0; transform-origin: bottom; }
+.replay-title div { text-align: center; }
+.replay-title small { display: block; letter-spacing: 0.3em; text-transform: uppercase; font-size: 11px; color: var(--brass); margin-bottom: 6px; }
+.replay-title h2 { margin: 0; font: 600 64px/1 var(--serif); letter-spacing: 0.12em; text-transform: uppercase; text-shadow: 0 2px 18px #000; }
+.replay-title h2::after { content: ''; display: block; width: 56px; height: 2px; margin: 14px auto 0; background: var(--brass); }
+.replay-title p { margin: 12px 0 0; color: var(--ivory); opacity: 0.85; }
+@keyframes replay-title { 0% { opacity: 0; } 15%, 75% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes replay-bars { 0% { transform: scaleY(0); } 20%, 80% { transform: scaleY(1); } 100% { transform: scaleY(0); } }
+
 .sheet { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(4, 6, 9, 0.5); backdrop-filter: blur(3px); }
 .sheet.clear { background: linear-gradient(90deg, rgba(4, 6, 9, 0.82), rgba(4, 6, 9, 0.35) 55%, transparent); backdrop-filter: none; place-items: center start; }
 .card { width: min(440px, 92vw); max-height: 92vh; overflow: auto; padding: 28px 30px; background: rgba(13, 16, 21, 0.9); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }

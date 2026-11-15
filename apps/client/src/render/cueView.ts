@@ -19,8 +19,16 @@ export interface CuePose {
 
 /** Stik 3D: tip di origin model, memanjang ke −X. */
 export class CueView {
-  constructor(private obj: THREE.Object3D) {
-    obj.visible = false;
+  /** Pivot di ujung tip. Node glTF stik sendiri tidak disentuh: kuantisasi meshopt
+   *  menyimpan offset/skala dekuantisasi di transform node itu, jadi menimpanya menggeser stik. */
+  private obj: THREE.Object3D;
+
+  constructor(model: THREE.Object3D) {
+    this.obj = new THREE.Group();
+    this.obj.name = 'CuePivot';
+    model.parent?.add(this.obj);
+    this.obj.add(model);
+    this.obj.visible = false;
   }
 
   set visible(v: boolean) {

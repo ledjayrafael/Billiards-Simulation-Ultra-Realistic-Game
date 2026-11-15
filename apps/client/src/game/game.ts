@@ -48,12 +48,16 @@ export interface GameEvents {
   turn: { player: number; reason: string; changed: boolean };
   toast: { text: string; kind: 'info' | 'foul' | 'good' };
   rackOver: { winner: number; matchOver: boolean };
+  /** kartu judul sebelum replay mulai diputar */
+  replayTitle: { shooter: number; isBreak: boolean; duration: number };
 }
 
 type Handler<T> = (payload: T) => void;
 
 const MAX_PULL = 0.3;
 const TIP_LIMIT = 0.6;
+/** durasi kartu judul replay (detik, waktu nyata) */
+const REPLAY_TITLE_DUR = 1.6;
 const MAX_ELEV = (80 * Math.PI) / 180;
 const CUE_LEN = SPECS.cue.length;
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -85,7 +89,9 @@ export class Game {
   private result: ShotResult | null = null;
   private pending: ShotResult | null = null;
   private pendingShot: ShotParams | null = null;
-  private last: { before: TableState; result: ShotResult; isBreak: boolean } | null = null;
+  private last: { before: TableState; result: ShotResult; isBreak: boolean; shooter: number } | null = null;
+  /** sisa waktu kartu judul replay; bola diam selama > 0 */
+  private replayHold = 0;
   private playT = 0;
   private eventCursor = 0;
   private strokeT = 0;
@@ -277,6 +283,7 @@ export class Game {
     this.pending = null;
     this.shotIsBreak = m.phase === 'break';
     const before = clone(m.table);
+    const shooter = m.currentPlayer;
     this.mode = 'stroke';
     this.strokeT = 0;
     this.strokeFrom = Math.max(this.pull, 0.04);
@@ -284,7 +291,7 @@ export class Game {
     void this.sim.simulate(before, shot).then(({ result, ms }) => {
       this.lastSimMs = ms;
       this.pending = result;
-      this.last = { before, result, isBreak: this.shotIsBreak };
+      this.last = { before, result, isBreak: this.shotIsBreak, shooter };
     });
     this.emit('change', undefined);
   }
@@ -296,20 +303,27 @@ export class Game {
     this.playSpeed = speed;
     this.playT = 0;
     this.eventCursor = 0;
+    this.replayHold = REPLAY_TITLE_DUR;
     this.ballViews.setTable(this.last.before);
     this.ballViews.resetPlayback();
     this.cueView.visible = false;
     this.rig.startShot(this.context(), this.last.isBreak);
+    this.emit('replayTitle', { shooter: this.last.shooter, isBreak: this.last.isBreak, duration: REPLAY_TITLE_DUR });
     this.emit('change', undefined);
     return true;
   }
   stopReplay(): void {
     if (this.mode !== 'replay' || !this.match) return;
+    this.replayHold = 0;
     this.ballViews.setTable(this.match.table);
     this.mode = 'aim';
     this.playSpeed = 1;
     this.rig.endShot();
     this.emit('change', undefined);
+  }
+  /** kartu judul replay sedang tampil (bola belum bergerak) */
+  get replayTitleActive(): boolean {
+    return this.mode === 'replay' && this.replayHold > 0;
   }
   get canReplay(): boolean {
     return this.mode === 'aim' && !!this.last;
@@ -416,6 +430,10 @@ export class Game {
         this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimDir, elevation: this.pendingShot!.elevation, tipX: this.tipX, tipY: this.tipY, gap: f >= 1 ? 0.001 : gap });
         this.guide.group.visible = false;
         if (f >= 1 && this.pending) this.startPlayback();
+      } else if (this.mode === 'replay' && this.replayHold > 0) {
+        // kartu judul: tahan posisi awal sampai judul selesai
+        this.replayHold -= dt;
+        if (this.replayHold <= 0) this.emit('change', undefined);
       } else if (this.mode === 'play' || this.mode === 'replay') {
         const res = this.result!;
         this.playT += dt * this.playSpeed;

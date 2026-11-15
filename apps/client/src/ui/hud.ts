@@ -92,6 +92,7 @@ export class Hud {
       if (t.changed || t.reason) this.turnOverlay(t.player, t.reason, t.changed);
     });
     game.on('rackOver', (r) => this.showRackOver(r.winner, r.matchOver));
+    game.on('replayTitle', (r) => this.replayTitle(r.shooter, r.isBreak, r.duration));
     this.refresh();
   }
 
@@ -115,6 +116,23 @@ export class Hud {
     setTimeout(() => o.remove(), 1950);
   }
 
+  private replayCard: HTMLElement | null = null;
+
+  /** Kartu judul sebelum replay diputar. */
+  private replayTitle(shooter: number, isBreak: boolean, duration: number): void {
+    const m = this.game.match;
+    if (!m) return;
+    this.overlay.innerHTML = '';
+    const o = el(
+      'div',
+      'replay-title',
+      `<div><small>Tayangan ulang</small><h2>Replay</h2><p>${esc(m.options.playerNames[shooter])}${isBreak ? ' · break' : ''}</p></div>`,
+    );
+    o.style.animationDuration = `${duration}s`;
+    this.overlay.appendChild(o);
+    this.replayCard = o;
+  }
+
   /** Dipanggil tiap frame untuk elemen yang berubah terus (power, spin). */
   tick(): void {
     const g = this.game;
@@ -123,6 +141,10 @@ export class Hud {
   }
 
   refresh(): void {
+    if (this.replayCard && !this.game.replayTitleActive) {
+      this.replayCard.remove();
+      this.replayCard = null;
+    }
     const g = this.game;
     const m = g.match;
     const inGame = !!m && this.sheetOpen !== 'menu';
