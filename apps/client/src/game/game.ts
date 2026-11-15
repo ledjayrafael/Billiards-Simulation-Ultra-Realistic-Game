@@ -62,6 +62,9 @@ const TIP_LIMIT = 0.6;
 const REPLAY_TITLE_DUR = 1.6;
 const MAX_ELEV = (80 * Math.PI) / 180;
 const CUE_LEN = SPECS.cue.length;
+/** laju penghalusan tampilan bidikan (1/detik) — cepat, tapi tanpa lompatan per piksel */
+const AIM_SMOOTH = 28;
+const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 /** Orkestrasi: giliran, bidikan, pukulan → simulasi (worker) → playback → aturan. */
@@ -75,6 +78,8 @@ export class Game {
   match: GameState | null = null;
   mode: GameMode = 'idle';
   aimDir = 0;
+  /** arah bidik yang ditampilkan (stik, garis bidik, kamera): mengikuti aimDir secara halus */
+  aimView = 0;
   tipX = 0;
   tipY = 0;
   elevation = 0;
@@ -171,16 +176,14 @@ export class Game {
     if (!m) return;
     const low = m.table.balls.find((b) => b.id === lowestBall(m.table));
     const c = this.cueBall;
-    if (low) this.aimDir = Math.atan2(low.pos[1] - c.y, low.pos[0] - c.x);
+    if (low) this.aimDir = this.aimView = Math.atan2(low.pos[1] - c.y, low.pos[0] - c.x);
   }
 
   // ───────────── input ─────────────
 
   aimBy(delta: number): void {
     if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return;
-    this.aimDir += delta;
-    if (this.aimDir > Math.PI) this.aimDir -= 2 * Math.PI;
-    if (this.aimDir < -Math.PI) this.aimDir += 2 * Math.PI;
+    this.aimDir = wrapAngle(this.aimDir + delta);
   }
   setTip(x: number, y: number): void {
     if (this.mode !== 'aim' || this.powerActive) return;
@@ -301,6 +304,7 @@ export class Game {
     const m = this.match;
     if (!m || this.mode !== 'aim') return;
     const speed = Math.min(CUE_MAX_SPEED, Math.max(CUE_MIN_SPEED, cueSpeed));
+    this.aimView = this.aimDir;
     const shot: ShotParams = {
       dir: this.aimDir,
       speed,
@@ -362,7 +366,7 @@ export class Game {
 
   private context(): RigContext {
     const c = this.cueBall;
-    return { cueX: c.x, cueY: c.y, aimDir: this.aimDir, focusX: this.focus[0], focusY: this.focus[1] };
+    return { cueX: c.x, cueY: c.y, aimDir: this.aimView, focusX: this.focus[0], focusY: this.focus[1] };
   }
 
   private startPlayback(): void {
@@ -441,9 +445,11 @@ export class Game {
       if (this.mode === 'aim') {
         const c = this.cueBall;
         this.focus = [c.x, c.y];
+        const d = wrapAngle(this.aimDir - this.aimView);
+        this.aimView = Math.abs(d) < 1e-7 ? this.aimDir : wrapAngle(this.aimView + d * (1 - Math.exp(-AIM_SMOOTH * dt)));
         this.cueView.visible = !this.rig.cinematic;
-        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimDir, elevation: this.effectiveElevation(), tipX: this.tipX, tipY: this.tipY, gap: 0.014 + this.pull });
-        this.guide.update(m.table, this.aimDir, !this.rig.cinematic);
+        this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimView, elevation: this.effectiveElevation(), tipX: this.tipX, tipY: this.tipY, gap: 0.014 + this.pull });
+        this.guide.update(m.table, this.aimView, !this.rig.cinematic);
       } else if (this.mode === 'stroke') {
         this.strokeT += dt;
         const f = Math.min(1, this.strokeT / this.strokeDur);

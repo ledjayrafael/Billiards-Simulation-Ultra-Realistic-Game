@@ -3,7 +3,11 @@ import type { Game } from '../game/game';
 import type { Settings } from '../game/settings';
 import type { Hud } from '../ui/hud';
 
-const AIM_RATE = 0.0021; // rad per piksel
+const AIM_RATE = 0.0021; // rad per piksel (gerak cepat)
+/** kurva presisi: gerak mouse pelan → rad/piksel jauh lebih kecil */
+const AIM_SLOW = 0.3;
+const AIM_SLOW_PX = 120; // px/detik: di bawah ini laju = AIM_SLOW
+const AIM_FAST_PX = 1400; // px/detik: di atas ini laju penuh
 const FINE = 0.12;
 const PULL_PER_PX = 0.0007; // meter tarikan per piksel
 const SPEED_PER_PX = 0.0023; // m/s kecepatan stik per (piksel/detik)
@@ -18,6 +22,11 @@ export class Controls {
   private draggingCue = false;
   private orbiting = false;
   private softLock = false;
+  /** kecepatan horizontal mouse (px/detik, dihaluskan) untuk kurva presisi bidik */
+  private aimVel = 0;
+  private aimT = 0;
+  /** lama tombol panah kiri/kanan ditahan (detik) */
+  private arrowHeld = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -165,7 +174,14 @@ export class Controls {
       g.setPull(next);
       return;
     }
-    const rate = AIM_RATE * sens * (e.shiftKey ? FINE : 1);
+    const now = performance.now();
+    const dtm = Math.min(100, Math.max(1, now - this.aimT));
+    this.aimT = now;
+    const inst = (Math.abs(e.movementX) / dtm) * 1000;
+    this.aimVel += (inst - this.aimVel) * Math.min(1, dtm / 60);
+    const k = Math.min(1, Math.max(0, (this.aimVel - AIM_SLOW_PX) / (AIM_FAST_PX - AIM_SLOW_PX)));
+    const curve = AIM_SLOW + (1 - AIM_SLOW) * k * k * (3 - 2 * k);
+    const rate = AIM_RATE * sens * curve * (e.shiftKey ? FINE : 1);
     g.aimBy(-e.movementX * rate);
   }
 
@@ -263,9 +279,14 @@ export class Controls {
     if (this.hud.sheetOpen || g.mode !== 'aim') return;
     const k = this.keys;
     const fine = k.has('ShiftLeft') || k.has('ShiftRight');
-    const aim = (fine ? 0.04 : 0.7) * dt;
-    if (k.has('ArrowLeft')) g.aimBy(aim);
-    if (k.has('ArrowRight')) g.aimBy(-aim);
+    const left = k.has('ArrowLeft');
+    const right = k.has('ArrowRight');
+    this.arrowHeld = left !== right ? this.arrowHeld + dt : 0;
+    // mulai sangat pelan lalu makin cepat selama ditahan → ketukan singkat = koreksi halus
+    const ramp = Math.min(1, 0.06 + this.arrowHeld * this.arrowHeld * 1.6);
+    const aim = (fine ? 0.04 : 0.7) * ramp * dt;
+    if (left && !right) g.aimBy(aim);
+    if (right && !left) g.aimBy(-aim);
     const tip = (fine ? 0.12 : 0.55) * dt;
     let tx = 0;
     let ty = 0;

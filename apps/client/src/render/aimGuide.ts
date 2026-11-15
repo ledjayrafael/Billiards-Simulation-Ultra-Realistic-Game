@@ -52,6 +52,26 @@ export function firstAimHit(table: TableState, dir: number): AimHit | null {
   return best;
 }
 
+/** Tekstur lebar garis: inti terang dengan tepi lembut (anti-alias) → garis tidak bergerigi/berkedip
+ *  saat diputar sedikit demi sedikit. Variasi hanya di arah lebar (v). */
+function softEdge(): THREE.DataTexture {
+  const n = 32;
+  const data = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const t = Math.abs((i + 0.5) / n - 0.5) * 2; // 0 di tengah, 1 di tepi
+    const e = Math.min(1, Math.max(0, (1 - t) / 0.55));
+    const a = e * e * (3 - 2 * e);
+    data.set([255, 255, 255, Math.round(a * 255)], i * 4);
+  }
+  const tex = new THREE.DataTexture(data, 1, n);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const LINE_W = 0.0048;
+
 /** Garis bidik + ghost ball di atas kain. */
 export class AimGuide {
   readonly group = new THREE.Group();
@@ -62,12 +82,13 @@ export class AimGuide {
   mode: GuideMode = 'short';
 
   constructor() {
-    const mat = (opacity: number): THREE.MeshBasicMaterial =>
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity, depthWrite: false, toneMapped: false });
+    const edge = softEdge();
+    const mat = (opacity: number, soft = false): THREE.MeshBasicMaterial =>
+      new THREE.MeshBasicMaterial({ color: 0xffffff, map: soft ? edge : null, transparent: true, opacity, depthWrite: false, toneMapped: false });
     const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
-    this.line = new THREE.Mesh(plane, mat(0.5));
-    this.objLine = new THREE.Mesh(plane, mat(0.42));
-    this.cueLine = new THREE.Mesh(plane, mat(0.25));
+    this.line = new THREE.Mesh(plane, mat(0.62, true));
+    this.objLine = new THREE.Mesh(plane, mat(0.52, true));
+    this.cueLine = new THREE.Mesh(plane, mat(0.32, true));
     this.ghost = new THREE.Mesh(new THREE.RingGeometry(R * 0.9, R, 48).rotateX(-Math.PI / 2), mat(0.6));
     this.group.add(this.line, this.objLine, this.cueLine, this.ghost);
     this.group.renderOrder = 5;
@@ -86,7 +107,7 @@ export class AimGuide {
     this.group.visible = visible && this.mode !== 'off' && !!hit && !!cue;
     if (!hit || !cue || !this.group.visible) return hit;
     const start = R * 1.25;
-    this.place(this.line, cue.pos[0] + Math.cos(dir) * start, cue.pos[1] + Math.sin(dir) * start, dir, Math.max(0, hit.dist - start - (hit.kind === 'ball' ? R : 0)), 0.0032);
+    this.place(this.line, cue.pos[0] + Math.cos(dir) * start, cue.pos[1] + Math.sin(dir) * start, dir, Math.max(0, hit.dist - start - (hit.kind === 'ball' ? R : 0)), LINE_W);
     this.ghost.position.set(hit.gx, 0.0018, -hit.gy);
     this.ghost.visible = hit.kind === 'ball';
     const full = this.mode === 'on' && hit.kind === 'ball';
@@ -94,12 +115,12 @@ export class AimGuide {
     this.cueLine.visible = full;
     if (full) {
       const oa = Math.atan2(hit.by - hit.gy, hit.bx - hit.gx);
-      this.place(this.objLine, hit.bx + Math.cos(oa) * R, hit.by + Math.sin(oa) * R, oa, 0.38, 0.0032);
+      this.place(this.objLine, hit.bx + Math.cos(oa) * R, hit.by + Math.sin(oa) * R, oa, 0.38, LINE_W);
       // garis singgung (arah cue ball untuk stun): tegak lurus garis pusat, ke sisi arah datang
       let ta = oa + Math.PI / 2;
       if (Math.cos(ta - dir) < 0) ta -= Math.PI;
       const cut = Math.abs(Math.sin(oa - dir));
-      this.place(this.cueLine, hit.gx + Math.cos(ta) * R, hit.gy + Math.sin(ta) * R, ta, 0.3 * cut, 0.0032);
+      this.place(this.cueLine, hit.gx + Math.cos(ta) * R, hit.gy + Math.sin(ta) * R, ta, 0.3 * cut, LINE_W);
     }
     return hit;
   }
