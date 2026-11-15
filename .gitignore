@@ -4,7 +4,6 @@ dist/
 *.blend
 *.blend1
 blender/out/
-blender/textures/src/
 __pycache__/
 .vite/
 *.log
