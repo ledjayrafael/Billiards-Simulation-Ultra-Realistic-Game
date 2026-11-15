@@ -1,0 +1,59 @@
+{
+  "_comment": "SUMBER KEBENARAN dimensi & koefisien. Satuan SI (m, kg, s, rad kecuali *Deg). Dibaca oleh Blender (bpy) dan TypeScript. Sumbu: x = panjang meja, y = lebar, z = atas; origin di tengah permukaan kain.",
+  "table": {
+    "length": 2.54,
+    "width": 1.27,
+    "cushionNoseHeight": 0.0363,
+    "cushionWidth": 0.0508,
+    "cushionTopHeight": 0.0405,
+    "railWidth": 0.135,
+    "railHeight": 0.0405,
+    "surfaceHeight": 0.76,
+    "slateThickness": 0.0254,
+    "cornerMouth": 0.1143,
+    "sideMouth": 0.1302,
+    "cornerJawAngleDeg": 142,
+    "sideJawAngleDeg": 104,
+    "cornerShelf": 0.0286,
+    "sideShelf": 0.0095,
+    "cornerPocketRadius": 0.066,
+    "sidePocketRadius": 0.066,
+    "jawTipRadius": 0.003,
+    "diamondsLong": 7,
+    "diamondsShort": 3
+  },
+  "ball": {
+    "radius": 0.028575,
+    "mass": 0.17
+  },
+  "cue": {
+    "length": 1.47,
+    "tipDiameter": 0.01275,
+    "mass": 0.54,
+    "tipRestitution": 0.75,
+    "miscueLimit": 0.5,
+    "squirtMaxDeg": 2.0,
+    "minSpeed": 0.3,
+    "maxSpeed": 9.0
+  },
+  "physics": {
+    "gravity": 9.81,
+    "muSlide": 0.2,
+    "muRoll": 0.01,
+    "muSpin": 0.0127,
+    "ballRestitution": 0.95,
+    "ballFrictionA": 0.00995,
+    "ballFrictionB": 0.108,
+    "ballFrictionC": 1.088,
+    "cushionRestitution": 0.9,
+    "cushionRestitutionSpeedLoss": 0.03,
+    "cushionRestitutionMin": 0.55,
+    "muCushion": 0.45,
+    "slateRestitution": 0.5,
+    "jumpRestitution": 0.25,
+    "hopThreshold": 0.3
+  },
+  "rack": {
+    "gap": 0.0001
+  }
+}

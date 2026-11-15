@@ -1,0 +1,28 @@
+{
+  "name": "billiards-9ball",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"npm run dev -w @billiards/server\" \"npm run dev -w @billiards/client\"",
+    "build": "npm run typecheck && npm run build -w @billiards/client",
+    "start": "npm run start -w @billiards/server",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/physics && tsc -p packages/rules && tsc -p apps/server && tsc -p apps/client",
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{ts,json,md,css,html}\" --ignore-path .gitignore",
+    "assets": "node tools/export-assets.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^10.15.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.0",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}
