@@ -7,6 +7,7 @@ const AIM_RATE = 0.0021; // rad per piksel
 const FINE = 0.12;
 const PULL_PER_PX = 0.0007; // meter tarikan per piksel
 const SPEED_PER_PX = 0.0023; // m/s kecepatan stik per (piksel/detik)
+const POWER_PER_PX = 0.1 / 14; // level power per piksel (0,1 tiap 14 px)
 
 /** Input desktop: mouse (pointer lock) + keyboard. */
 export class Controls {
@@ -68,6 +69,7 @@ export class Controls {
   }
 
   private cancelStroke(): void {
+    this.game.cancelPowerBar();
     if (this.stroking) {
       this.stroking = false;
       this.game.setPull(0);
@@ -93,7 +95,7 @@ export class Controls {
       g.rig.orbiting = true;
       return;
     }
-    if (e.button !== 0 || g.mode !== 'aim') return;
+    if (e.button !== 0 || g.mode !== 'aim' || g.powerActive) return;
     if (!this.locked) {
       // ball in hand: mulai seret bila klik dekat cue ball
       const m = g.match;
@@ -134,6 +136,11 @@ export class Controls {
     }
     if (this.orbiting) {
       g.rig.orbit(-e.movementX * 0.004, e.movementY * 0.003);
+      return;
+    }
+    if (g.powerActive) {
+      // mouse = power meter: tarik mundur (ke bawah) menambah power
+      g.adjustPower(e.movementY * POWER_PER_PX * sens * (e.shiftKey ? 0.25 : 1));
       return;
     }
     if (!this.locked || g.mode !== 'aim') return;
@@ -178,6 +185,10 @@ export class Controls {
 
   private onWheel(e: WheelEvent): void {
     if (this.hud.sheetOpen) return;
+    if (this.game.powerActive) {
+      if (e.deltaY) this.game.stepPower(e.deltaY > 0 ? -1 : 1);
+      return;
+    }
     if (e.shiftKey) this.game.rig.tilt(e.deltaY * 0.0006);
     else {
       this.game.rig.zoom(e.deltaY * 0.0009);
@@ -194,11 +205,22 @@ export class Controls {
     if (e.code === 'Space') {
       e.preventDefault();
       if (this.hud.sheetOpen) return;
-      if (down && !e.repeat) g.startPowerBar();
-      if (!down) g.releasePowerBar();
+      // tekan sekali: kunci bidikan · tekan lagi: pukul (tahan/lepas tidak berpengaruh)
+      if (!down || e.repeat || this.stroking) return;
+      if (g.powerActive) g.releasePowerBar();
+      else g.startPowerBar();
+      return;
+    }
+    if (down && g.powerActive && (e.code === 'ArrowUp' || e.code === 'ArrowDown')) {
+      e.preventDefault();
+      g.stepPower(e.code === 'ArrowUp' ? 1 : -1);
       return;
     }
     if (!down || e.repeat) return;
+    if (e.code === 'Escape' && g.powerActive) {
+      g.cancelPowerBar();
+      return;
+    }
     if (e.code === 'Escape') {
       if (this.softLock) {
         this.softLock = false;

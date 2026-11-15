@@ -2,6 +2,7 @@ import { CUE_MAX_SPEED } from '@billiards/physics';
 import { ballsOnTable, lowestBall } from '@billiards/rules';
 import type { MatchOptions } from '@billiards/shared';
 import type { Game } from '../game/game';
+import { POWER_MAX, POWER_MIN, powerSpeed } from '../game/power';
 import { saveSettings, type Settings } from '../game/settings';
 
 const BALL_COLORS = ['#f4f1e6', '#f2c12e', '#1f55b5', '#d12a20', '#5c2d91', '#f07a1c', '#1f8a4c', '#8a2424', '#1a1a1a', '#f2c12e'];
@@ -37,8 +38,12 @@ export class Hud {
   private elevArc = el('i');
   private elevTxt = el('span');
   private power = el('div', 'power');
-  private powerFill = el('i');
+  private powerFill = el('i', 'fill');
+  private powerMark = el('b', 'mark');
+  private powerLv = el('span', 'lv');
+  private powerSpd = el('small');
   private powerTxt = el('div', 'txt');
+  private shownLevel = -1;
   private actions = el('div', 'actions interactive');
   private hint = el('div', 'hint');
   private overlay = el('div');
@@ -62,11 +67,15 @@ export class Hud {
     elev.firstElementChild!.appendChild(this.elevArc);
     elev.appendChild(this.elevTxt);
     this.spin.append(this.spinTxt, elev);
-    this.power.innerHTML = '<div class="bar"></div>';
-    this.power.firstElementChild!.appendChild(this.powerFill);
-    this.power.appendChild(this.powerTxt);
-    this.powerTxt.innerHTML =
-      '<kbd>Klik kiri</kbd> tahan, tarik mundur lalu dorong<br><kbd>Space</kbd> tahan/lepas: power bar<br><kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi';
+    // power meter 1,0–5,0: skala angka besar tiap 1, garis kecil tiap 0,1
+    const labels = [1, 2, 3, 4, 5].map((n) => `<span style="bottom:${(n - 1) * 25}%">${n}</span>`).join('');
+    this.power.innerHTML = `<div class="meter"><div class="scale">${labels}</div><div class="track"><div class="ticks"></div></div></div><div class="info"><div class="read"></div></div>`;
+    const track = this.power.querySelector('.track')!;
+    track.prepend(this.powerFill);
+    track.appendChild(this.powerMark);
+    const read = this.power.querySelector('.read')!;
+    read.append(this.powerLv, this.powerSpd);
+    this.power.querySelector('.info')!.appendChild(this.powerTxt);
     this.hudLayer.append(this.score, this.rail, this.status, this.toasts, this.spin, this.power, this.hint, this.actions, this.fps);
     this.root.append(this.hudLayer, this.overlay, this.sheet);
 
@@ -136,8 +145,18 @@ export class Hud {
   /** Dipanggil tiap frame untuk elemen yang berubah terus (power, spin). */
   tick(): void {
     const g = this.game;
-    const p = g.powerActive ? g.power : g.pull / 0.3;
-    this.powerFill.style.height = `${Math.round(p * 100)}%`;
+    const lv = g.powerLevel;
+    if (lv === this.shownLevel) return;
+    if (this.shownLevel >= 0 && g.powerActive) {
+      this.powerLv.classList.remove('bump');
+      void this.powerLv.offsetWidth;
+      this.powerLv.classList.add('bump');
+    }
+    this.shownLevel = lv;
+    const f = (lv - POWER_MIN) / (POWER_MAX - POWER_MIN);
+    this.power.style.setProperty('--f', f.toFixed(4));
+    this.powerLv.textContent = lv.toFixed(1).replace('.', ',');
+    this.powerSpd.textContent = `${powerSpeed(lv).toFixed(2).replace('.', ',')} m/s`;
   }
 
   refresh(): void {
@@ -165,7 +184,8 @@ export class Hud {
 
     // status
     let st = '';
-    if (g.mode === 'aim') {
+    if (g.mode === 'aim' && g.powerActive) st = '<b>Bidikan terkunci</b> — atur power, lalu tekan Space untuk memukul';
+    else if (g.mode === 'aim') {
       if (m.phase === 'break') st = '<b>Break</b> — seret cue ball di belakang head string, lalu bidik';
       else if (m.ballInHand === 'anywhere') st = '<b>Ball in hand</b> — seret cue ball ke mana saja';
       else if (g.pushOutArmed) st = '<b>Push-out</b> dinyatakan — pukulan ini tidak wajib mengenai bola';
@@ -187,6 +207,10 @@ export class Hud {
     const aiming = g.mode === 'aim';
     this.spin.classList.toggle('hidden', !aiming);
     this.power.classList.toggle('hidden', !aiming);
+    this.power.classList.toggle('armed', aiming && g.powerActive);
+    this.powerTxt.innerHTML = g.powerActive
+      ? '<b>Bidikan terkunci</b><br><kbd>Mouse ↕</kbd> atur power · <kbd>Scroll</kbd>/<kbd>↑↓</kbd> ±0,1<br><kbd>Space</kbd> pukul · <kbd>Esc</kbd> batal'
+      : '<kbd>Space</kbd> kunci bidikan &amp; atur power<br><kbd>Klik kiri</kbd> tahan, tarik lalu dorong<br><kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi';
 
     // tombol
     this.actions.innerHTML = '';
@@ -216,7 +240,7 @@ export class Hud {
       btn('Selesai', () => g.stopReplay(), 'primary');
     }
     this.hint.textContent =
-      g.mode === 'aim' ? (this.pointerLocked ? 'Gerakkan mouse untuk membidik · Shift = bidik halus · Esc = lepas kursor' : 'Klik meja untuk membidik dengan mouse · ←/→ juga bisa') : '';
+      g.mode === 'aim' && !g.powerActive ? (this.pointerLocked ? 'Gerakkan mouse untuk membidik · Shift = bidik halus · Esc = lepas kursor' : 'Klik meja untuk membidik dengan mouse · ←/→ juga bisa') : '';
   }
 
   // ───────────── sheet: menu / pause / rack / match ─────────────
@@ -276,7 +300,7 @@ export class Hud {
       <div class="row"><label>Break bergantian</label><input type="checkbox" ${o.alternateBreak ? 'checked' : ''} data-o="alternateBreak"></div>
       ${this.settingsRows()}
       <button class="primary go">Mulai pertandingan</button>
-      <div class="help"><kbd>Mouse</kbd> bidik · <kbd>Klik kiri</kbd> tarik &amp; dorong untuk memukul · <kbd>Space</kbd> power bar · <kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi · <kbd>Klik kanan</kbd> orbit · <kbd>Scroll</kbd> zoom · <kbd>T</kbd> tampak atas · <kbd>R</kbd> reset kamera · <kbd>P</kbd> replay</div>`,
+      <div class="help"><kbd>Mouse</kbd> bidik · <kbd>Klik kiri</kbd> tarik &amp; dorong untuk memukul · <kbd>Space</kbd> kunci bidikan, atur power, Space lagi memukul · <kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi · <kbd>Klik kanan</kbd> orbit · <kbd>Scroll</kbd> zoom · <kbd>T</kbd> tampak atas · <kbd>R</kbd> reset kamera · <kbd>P</kbd> replay</div>`,
       true,
     );
     card.querySelectorAll<HTMLInputElement>('[data-p]').forEach((i) => i.addEventListener('input', () => (o.playerNames[+i.dataset.p!] = i.value.trim() || `Pemain ${+i.dataset.p! + 1}`)));

@@ -30,6 +30,7 @@ import { BallViews } from '../render/ballViews';
 import { CueView } from '../render/cueView';
 import type { World } from '../render/world';
 import { SimClient } from '../sim/client';
+import { POWER_MAX, POWER_MIN, POWER_STEP, powerSpeed } from './power';
 import type { Settings } from './settings';
 
 export type GameMode =
@@ -55,6 +56,7 @@ export interface GameEvents {
 type Handler<T> = (payload: T) => void;
 
 const MAX_PULL = 0.3;
+const roundLevel = (v: number): number => Math.round(Math.min(POWER_MAX, Math.max(POWER_MIN, v)) * 10) / 10;
 const TIP_LIMIT = 0.6;
 /** durasi kartu judul replay (detik, waktu nyata) */
 const REPLAY_TITLE_DUR = 1.6;
@@ -78,8 +80,9 @@ export class Game {
   elevation = 0;
   /** tarikan stik (m) */
   pull = 0;
-  /** power bar (Space): 0..1, aktif saat ditahan */
-  power = 0;
+  /** level power terkunci (1,0–5,0, kelipatan 0,1); diingat antar pukulan */
+  powerLevel = 2.5;
+  /** Space ditekan: bidikan terkunci, mouse mengatur power */
   powerActive = false;
   pushOutArmed = false;
   lastSimMs = 0;
@@ -99,7 +102,7 @@ export class Game {
   private strokeFrom = 0;
   private followT = 0;
   private followMin = Infinity;
-  private powerT = 0;
+  private powerRaw = 2.5;
   private shotIsBreak = false;
   private focus: [number, number] = [0, 0];
   private lastTurnPlayer = -1;
@@ -149,7 +152,6 @@ export class Game {
     const m = this.match!;
     this.mode = 'aim';
     this.pull = 0;
-    this.power = 0;
     this.powerActive = false;
     this.pushOutArmed = false;
     this.tipX = 0;
@@ -175,13 +177,13 @@ export class Game {
   // ───────────── input ─────────────
 
   aimBy(delta: number): void {
-    if (this.mode !== 'aim' || this.pull > 0.002) return;
+    if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return;
     this.aimDir += delta;
     if (this.aimDir > Math.PI) this.aimDir -= 2 * Math.PI;
     if (this.aimDir < -Math.PI) this.aimDir += 2 * Math.PI;
   }
   setTip(x: number, y: number): void {
-    if (this.mode !== 'aim') return;
+    if (this.mode !== 'aim' || this.powerActive) return;
     const d = Math.hypot(x, y);
     if (d > TIP_LIMIT) {
       x *= TIP_LIMIT / d;
@@ -192,7 +194,7 @@ export class Game {
     this.emit('change', undefined);
   }
   elevateBy(d: number): void {
-    if (this.mode !== 'aim') return;
+    if (this.mode !== 'aim' || this.powerActive) return;
     this.elevation = Math.min(MAX_ELEV, Math.max(0, this.elevation + d));
     this.emit('change', undefined);
   }
@@ -200,19 +202,45 @@ export class Game {
     if (this.mode !== 'aim') return;
     this.pull = Math.min(MAX_PULL, Math.max(0, p));
   }
-  startPowerBar(): void {
-    if (this.mode !== 'aim' || this.powerActive) return;
+  /** Space pertama: kunci bidikan/spin/elevasi; mouse kini mengatur power. */
+  startPowerBar(): boolean {
+    if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return false;
     this.powerActive = true;
-    this.powerT = 0;
-    this.power = 0;
+    this.powerRaw = this.powerLevel;
+    this.pull = this.powerPull();
+    this.emit('change', undefined);
+    return true;
   }
+  /** Geser power secara halus (unit level); nilai yang dipakai dibulatkan ke 0,1. */
+  adjustPower(delta: number): void {
+    if (!this.powerActive) return;
+    this.powerRaw = Math.min(POWER_MAX, Math.max(POWER_MIN, this.powerRaw + delta));
+    this.powerLevel = roundLevel(this.powerRaw);
+    this.pull = this.powerPull();
+  }
+  /** Naik/turun tepat n langkah 0,1 (scroll / panah). */
+  stepPower(n: number): void {
+    if (!this.powerActive) return;
+    this.powerLevel = roundLevel(this.powerLevel + n * POWER_STEP);
+    this.powerRaw = this.powerLevel;
+    this.pull = this.powerPull();
+  }
+  /** Esc: batalkan, bidikan terbuka lagi. */
+  cancelPowerBar(): void {
+    if (!this.powerActive) return;
+    this.powerActive = false;
+    this.pull = 0;
+    this.emit('change', undefined);
+  }
+  /** Space kedua: pukul dengan level yang terkunci. */
   releasePowerBar(): void {
     if (!this.powerActive) return;
     this.powerActive = false;
-    const p = this.power;
-    this.power = 0;
-    if (p > 0.02) this.fire(CUE_MIN_SPEED + (CUE_MAX_SPEED - CUE_MIN_SPEED) * Math.pow(p, 1.6));
-    else this.pull = 0;
+    this.fire(powerSpeed(this.powerLevel));
+  }
+  /** tarikan stik visual sesuai level */
+  private powerPull(): number {
+    return 0.025 + 0.235 * ((this.powerLevel - POWER_MIN) / (POWER_MAX - POWER_MIN));
   }
   togglePushOut(): void {
     if (this.mode !== 'aim' || !this.match?.pushOutAvailable) return;
@@ -235,7 +263,7 @@ export class Game {
   /** Ball in hand: pindahkan cue ball ke posisi valid terdekat dari (x, y). */
   moveCueBall(x: number, y: number): boolean {
     const m = this.match;
-    if (!m || this.mode !== 'aim' || m.ballInHand === 'none') return false;
+    if (!m || this.mode !== 'aim' || m.ballInHand === 'none' || this.powerActive) return false;
     const [px, py] = nearestValidCuePlacement(m.table, x, y, m.ballInHand === 'kitchen');
     const next = placeCueBall(m, px, py);
     if (next === m) return false;
@@ -411,13 +439,6 @@ export class Game {
     const m = this.match;
     if (m) {
       if (this.mode === 'aim') {
-        if (this.powerActive) {
-          // naik-turun 0→1→0 (periode 2.6 dtk)
-          this.powerT += dt;
-          const ph = (this.powerT / 1.3) % 2;
-          this.power = ph < 1 ? ph : 2 - ph;
-          this.pull = this.power * MAX_PULL;
-        }
         const c = this.cueBall;
         this.focus = [c.x, c.y];
         this.cueView.visible = !this.rig.cinematic;
