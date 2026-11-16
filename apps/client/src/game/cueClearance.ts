@@ -12,6 +12,10 @@ import { BALL_RADIUS as R, SPECS, TABLE_LENGTH, TABLE_WIDTH } from '@billiards/p
  * (taper sama dengan blender/scripts/build_cue.py). Batang harus berada di atas permukaan
  * cushion/rail H(x). Karena itu stik bisa makin datar hanya bila titik pukul dinaikkan (follow):
  * persis kompromi yang dipakai pemain saat bridge di atas rail.
+ *
+ * Bola lain di belakang/samping garis stik diperlakukan sama: jarak 3D poros stik ke pusat bola
+ * harus ≥ R + r(d) + celah di sepanjang seluruh batang (termasuk saat stik ditarik mundur),
+ * sehingga stik terangkat sendiri di atas bola yang menghalangi.
  */
 
 const T = SPECS.table;
@@ -27,6 +31,10 @@ const R_BUTT = 0.0148;
 export const RAIL_GAP = 0.0015;
 /** elevasi minimum umum (rad): butt stik selalu sedikit lebih tinggi dari tangan bridge */
 export const MIN_ELEV = 0.035;
+/** celah batang–bola lain (m) */
+export const BALL_GAP = 0.002;
+/** tarikan stik maksimum (m): batang yang mundur juga tidak boleh menembus bola */
+const PULL_RANGE = 0.3;
 /** batas atas elevasi yang dicari otomatis (rad) */
 const MAX_AUTO_ELEV = (60 * Math.PI) / 180;
 
@@ -53,11 +61,47 @@ export interface Obstacle {
   h: number;
 }
 
+export interface BallObstacle {
+  /** jarak horizontal di belakang pusat cue ball (searah −dir) */
+  x: number;
+  /** jarak lateral ke kanan garis bidik */
+  y: number;
+}
+
+export interface Obstacles {
+  rail: Obstacle[];
+  balls: BallObstacle[];
+}
+
+/**
+ * Rintangan stik: titik-titik cushion/rail di bawah garis stik dan bola lain di dekat batang.
+ * `others` = posisi (x, y) bola lain yang masih di meja.
+ */
+export function obstaclesBehind(
+  bx: number,
+  by: number,
+  dir: number,
+  tipX: number,
+  others: ReadonlyArray<readonly [number, number]> = [],
+): Obstacles {
+  const balls: BallObstacle[] = [];
+  const ct = Math.cos(dir);
+  const st = Math.sin(dir);
+  for (const [px, py] of others) {
+    const x = -(px - bx) * ct - (py - by) * st;
+    const y = (px - bx) * st - (py - by) * ct;
+    // bola jauh di depan atau jauh di samping batang tak mungkin tersentuh
+    if (x < -2 * R || Math.abs(y) > 2.6 * R + R_BUTT + BALL_GAP) continue;
+    balls.push({ x, y });
+  }
+  return { rail: railBehind(bx, by, dir, tipX), balls };
+}
+
 /**
  * Titik-titik cushion/rail di bawah garis stik (proyeksi horizontal), di belakang cue ball.
  * Kosong bila rail terlalu jauh untuk dilewati stik.
  */
-export function obstaclesBehind(bx: number, by: number, dir: number, tipX: number): Obstacle[] {
+function railBehind(bx: number, by: number, dir: number, tipX: number): Obstacle[] {
   const wx = -Math.cos(dir);
   const wy = -Math.sin(dir);
   // garis poros bergeser ke samping sebesar tipX·R (english)
@@ -88,25 +132,38 @@ export function obstaclesBehind(bx: number, by: number, dir: number, tipX: numbe
   return out;
 }
 
-/** Celah minimum (m) antara sisi bawah batang dan cushion/rail; negatif = menabrak. */
-export function clearance(obs: Obstacle[], tipX: number, tipY: number, elev: number): number {
-  if (!obs.length) return Infinity;
+/** Celah minimum (m) antara batang dan cushion/rail atau bola lain; negatif = menabrak. */
+export function clearance(obs: Obstacles, tipX: number, tipY: number, elev: number): number {
   const c = Math.cos(elev);
   const tn = Math.tan(elev);
   const sn = Math.sin(elev);
   const t0 = R * Math.sqrt(Math.max(0, 1 - tipX * tipX - tipY * tipY));
-  let min = Infinity;
-  for (const o of obs) {
+  let rail = Infinity;
+  for (const o of obs.rail) {
     const t = (o.x + R * tipY * sn) / c; // jarak sepanjang poros dari titik tengah penampang bola
     const r = shaftRadius(t - t0);
     const bottom = R + o.x * tn + (R * tipY - r) / c;
-    min = Math.min(min, bottom - o.h);
+    rail = Math.min(rail, bottom - o.h);
   }
-  return min - RAIL_GAP;
+  // Kerangka lokal: x = mundur horizontal, y = kanan, z = atas. Poros melalui
+  // P0 = (−R·b·sinθ, R·a, R + R·b·cosθ) dengan arah mundur (cosθ, 0, sinθ).
+  let ball = Infinity;
+  const p0x = -R * tipY * sn;
+  const p0y = R * tipX;
+  const p0z = R + R * tipY * c;
+  for (const o of obs.balls) {
+    const t = Math.min(t0 + L + PULL_RANGE, Math.max(t0, o.x * c));
+    const dx = o.x - (p0x + t * c);
+    const dy = o.y - p0y;
+    const dz = R - (p0z + t * sn);
+    const r = shaftRadius(Math.min(L, t - t0));
+    ball = Math.min(ball, Math.hypot(dx, dy, dz) - R - r);
+  }
+  return Math.min(rail - RAIL_GAP, ball - BALL_GAP);
 }
 
 /** Titik pukul vertikal terendah (tipY) yang lolos pada elevasi `elev`; Infinity bila > `maxY`. */
-export function minTipY(obs: Obstacle[], tipX: number, elev: number, maxY: number): number {
+export function minTipY(obs: Obstacles, tipX: number, elev: number, maxY: number): number {
   if (clearance(obs, tipX, -1, elev) >= 0) return -Infinity;
   if (clearance(obs, tipX, maxY, elev) < 0) return Infinity;
   let lo = -1;
@@ -120,7 +177,7 @@ export function minTipY(obs: Obstacle[], tipX: number, elev: number, maxY: numbe
 }
 
 /** Elevasi terendah (≥ MIN_ELEV) yang lolos untuk titik pukul (tipX, tipY). */
-export function minElevation(obs: Obstacle[], tipX: number, tipY: number): number {
+export function minElevation(obs: Obstacles, tipX: number, tipY: number): number {
   if (clearance(obs, tipX, tipY, MIN_ELEV) >= 0) return MIN_ELEV;
   let lo = MIN_ELEV;
   let hi = MAX_AUTO_ELEV;
@@ -137,7 +194,7 @@ export interface Stroke {
   tipX: number;
   tipY: number;
   elevation: number;
-  /** elevasi dinaikkan oleh rail */
+  /** elevasi dinaikkan oleh rail atau bola lain */
   railElev: boolean;
   /** titik pukul dinaikkan oleh rail (follow paksa) */
   railFollow: boolean;
@@ -158,8 +215,9 @@ export function resolveStroke(
   elev: number,
   priority: 'tip' | 'elev',
   autoMax: number,
+  others: ReadonlyArray<readonly [number, number]> = [],
 ): Stroke {
-  const obs = obstaclesBehind(bx, by, dir, tipX);
+  const obs = obstaclesBehind(bx, by, dir, tipX, others);
   const e0 = Math.max(MIN_ELEV, elev);
   if (priority === 'tip') {
     const e = Math.max(e0, minElevation(obs, tipX, tipY));

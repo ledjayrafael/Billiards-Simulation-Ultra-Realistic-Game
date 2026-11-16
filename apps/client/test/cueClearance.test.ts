@@ -47,3 +47,34 @@ describe('celah stik di atas rail', () => {
     expect(clearance(nearRail(0.1), 0, -0.3, s.elevation)).toBeGreaterThanOrEqual(-1e-6);
   });
 });
+
+describe('celah stik di atas bola lain', () => {
+  it('bola tepat di belakang cue ball: stik terangkat sampai lolos', () => {
+    // cue ball di tengah, bidik ke kanan (+x); bola lain 8 cm di belakang garis stik
+    const others: [number, number][] = [[-0.08, 0]];
+    const s = resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, others);
+    expect(s.railElev).toBe(true);
+    expect(s.elevation).toBeGreaterThan(10 * DEG);
+    expect(clearance(obstaclesBehind(0, 0, 0, 0, others), 0, 0, s.elevation)).toBeGreaterThanOrEqual(-1e-6);
+    expect(clearance(obstaclesBehind(0, 0, 0, 0, others), 0, 0, s.elevation - 1 * DEG)).toBeLessThan(0);
+  });
+
+  it('bola jauh di belakang: butt stik pun harus lolos, elevasi kecil cukup', () => {
+    const near = resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, [[-0.1, 0]]).elevation;
+    const far = resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, [[-1.0, 0]]).elevation;
+    expect(far).toBeGreaterThan(MIN_ELEV);
+    expect(far).toBeLessThan(near);
+  });
+
+  it('bola di samping garis stik atau di depan tidak mengubah elevasi', () => {
+    expect(resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, [[-0.3, 0.08]]).elevation).toBe(MIN_ELEV);
+    expect(resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, [[0.3, 0]]).elevation).toBe(MIN_ELEV);
+  });
+
+  it('bola bersinggungan sebagian dengan batang (english) ikut dihitung', () => {
+    // tanpa english lolos, dengan english kanan batang bergeser dan menyentuh bola
+    const others: [number, number][] = [[-0.3, -(R + 0.0135)]];
+    expect(resolveStroke(0, 0, 0, 0, 0, 0, 'tip', 0.45, others).elevation).toBe(MIN_ELEV);
+    expect(resolveStroke(0, 0, 0, 0.4, 0, 0, 'tip', 0.45, others).elevation).toBeGreaterThan(MIN_ELEV);
+  });
+});

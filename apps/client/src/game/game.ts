@@ -297,7 +297,7 @@ export class Game {
   }
 
   /**
-   * Elevasi & titik pukul yang benar-benar dipakai: stik harus melewati cushion/rail di
+   * Elevasi & titik pukul yang benar-benar dipakai: stik harus melewati cushion/rail dan bola lain di
    * belakang cue ball (lihat cueClearance.ts). Saat memukul/replay: nilai pukulan terakhir.
    */
   stroke(): Stroke {
@@ -306,7 +306,11 @@ export class Game {
       return { tipX: p.tipX, tipY: p.tipY, elevation: p.elevation, railElev: false, railFollow: false };
     }
     const { x, y } = this.cueBall;
-    return resolveStroke(x, y, this.aimView, this.tipX, this.tipY, this.elevation, this.railPriority, AUTO_FOLLOW_MAX);
+    const others: [number, number][] = [];
+    for (const b of this.match?.table.balls ?? []) {
+      if (b.id !== 0 && b.motion !== 'pocketed' && b.motion !== 'off-table') others.push([b.pos[0], b.pos[1]]);
+    }
+    return resolveStroke(x, y, this.aimView, this.tipX, this.tipY, this.elevation, this.railPriority, AUTO_FOLLOW_MAX, others);
   }
   effectiveElevation(): number {
     return this.stroke().elevation;

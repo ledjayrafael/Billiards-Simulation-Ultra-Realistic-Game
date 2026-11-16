@@ -174,10 +174,10 @@ export class Hud {
     const off = Math.hypot(sk.tipX, sk.tipY);
     this.spinDot.classList.toggle('miscue', off > 0.5);
     const spin = off > 0.5 ? 'risiko miscue!' : off < 0.02 ? 'center ball' : `spin ${[Math.abs(sk.tipX) >= 0.01 ? `${sk.tipX > 0 ? 'kanan' : 'kiri'} ${Math.abs(sk.tipX * 100).toFixed(0)}%` : '', Math.abs(sk.tipY) >= 0.01 ? `${sk.tipY > 0 ? 'atas' : 'bawah'} ${Math.abs(sk.tipY * 100).toFixed(0)}%` : ''].filter(Boolean).join(' · ')}`;
-    this.spinTxt.textContent = sk.railFollow ? `${spin} · follow (stik di atas rail)` : spin;
+    this.spinTxt.textContent = sk.railFollow ? `${spin} · follow (stik lewat atas)` : spin;
     const ev = sk.elevation;
     this.elevArc.style.transform = `rotate(${-ev * DEG}deg)`;
-    this.elevTxt.textContent = sk.railElev ? `elevasi ${(ev * DEG).toFixed(0)}° · min. rail${sk.railFollow ? '' : ' (Q datarkan)'}` : `elevasi ${(ev * DEG).toFixed(0)}°`;
+    this.elevTxt.textContent = sk.railElev ? `elevasi ${(ev * DEG).toFixed(0)}° · minimum${sk.railFollow ? '' : ' (Q datarkan)'}` : `elevasi ${(ev * DEG).toFixed(0)}°`;
   }
 
   refresh(): void {
