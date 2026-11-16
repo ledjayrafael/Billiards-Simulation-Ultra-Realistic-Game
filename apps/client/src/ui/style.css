@@ -43,6 +43,7 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 
 .status { position: absolute; top: 126px; left: 50%; transform: translateX(-50%); font-size: 13px; color: var(--ivory); text-shadow: 0 1px 3px #000; text-align: center; white-space: nowrap; }
 .status b { color: var(--brass); font-weight: 600; }
+.status .bad { color: #ff7a70; font-weight: 600; }
 
 /* ── toast ── */
 .toasts { position: absolute; top: 160px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; }
@@ -58,8 +59,11 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 .spin .ball::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(0, 0, 0, 0.12); }
 .spin .dot { position: absolute; width: 15px; height: 15px; margin: -7.5px; border-radius: 50%; background: #1f6fb0; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.6); left: 50%; top: 50%; }
 .spin .dot.miscue { background: var(--foul); }
+/* jump cue: area titik pukul yang diizinkan (radius 0,3 R) */
+.spin .ball .lim { display: none; position: absolute; left: 35%; top: 35%; width: 30%; height: 30%; border-radius: 50%; border: 1.5px solid rgba(201, 164, 92, 0.9); background: rgba(201, 164, 92, 0.12); pointer-events: none; }
+.spin.jump .ball .lim { display: block; }
 .spin small { color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
-.elev { display: flex; align-items: center; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.elev { cursor: ns-resize; touch-action: none; user-select: none; display: flex; align-items: center; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .elev .arc { width: 44px; height: 24px; position: relative; overflow: hidden; }
 .elev .arc::before { content: ''; position: absolute; left: 0; bottom: 0; width: 44px; height: 1px; background: var(--muted); }
 .elev .arc i { position: absolute; left: 0; bottom: 0; width: 44px; height: 2px; background: var(--brass); transform-origin: 0 50%; }
@@ -85,6 +89,10 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 .power .mark::before, .power .mark::after { content: ''; position: absolute; top: -4px; border: 5px solid transparent; }
 .power .mark::before { left: -6px; border-left-color: var(--ivory); }
 .power .mark::after { right: -6px; border-right-color: var(--ivory); }
+/* jump cue: power minimum agar bola terangkat */
+.power .lift { position: absolute; z-index: 1; left: 0; right: 0; height: 0; bottom: calc(3px + (var(--h) - 6px) * var(--lf)); border-top: 2px dashed #8dffb0; opacity: 0.9; pointer-events: none; }
+.power .lift.none { border-top-color: var(--foul); }
+.power .lift[hidden] { display: none; }
 .power .info { display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
 .power .read { display: flex; flex-direction: column; align-items: flex-start; }
 .power .lv { font: 600 46px/1 var(--serif); font-variant-numeric: tabular-nums; color: var(--ivory); opacity: 0.45; text-shadow: 0 2px 14px rgba(0, 0, 0, 0.8); transition: opacity 0.2s, color 0.2s; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rackNineBall } from '@billiards/rules';
 import type { TableState } from '@billiards/shared';
-import { firstDownCrossing, realRootsInInterval, simulate, makeBall } from '../src';
+import { firstDownCrossing, jumpLiftSpeed, realRootsInInterval, simulate, makeBall } from '../src';
 import { collideBalls } from '../src/collide/ballBall';
 import { collideCushion } from '../src/collide/cushion';
 import { toBody, fromBody } from '../src/ball';
@@ -350,6 +350,27 @@ describe('pocket & lain-lain', () => {
     // pukulan mendatar dengan kecepatan sama mengenai bola penghalang
     const flat = simulate(t, shot({ speed: 5.5 }));
     expect(flat.events.some((e) => e.type === 'ball-ball')).toBe(true);
+  });
+  it('jump cue: lompatan lebih tinggi dari stik biasa pada pukulan yang sama', () => {
+    const apex = (cue?: 'jump'): number => {
+      const res = simulate(table([0, -0.6, 0]), { ...shot({ speed: 4, elevation: 45 * DEG }), cue });
+      const tr = res.frames[0];
+      let z = 0;
+      for (let i = 2; i < tr.p.length; i += 3) z = Math.max(z, tr.p[i]);
+      return z - R;
+    };
+    const std = apex();
+    const jump = apex('jump');
+    expect(std).toBeGreaterThan(0);
+    expect(jump).toBeGreaterThan(std * 1.2);
+  });
+  it('jumpLiftSpeed: tepat di bawah batas bola tetap di kain, sedikit di atasnya bola terangkat', () => {
+    const e = 40 * DEG;
+    const v = jumpLiftSpeed(e, 0, 0, P);
+    const lifted = (speed: number): boolean =>
+      simulate(table([0, -0.6, 0]), { ...shot({ speed, elevation: e }), cue: 'jump' }).events.some((x) => x.type === 'slate');
+    expect(lifted(v * 0.97)).toBe(false);
+    expect(lifted(v * 1.03)).toBe(true);
   });
   it('massé: elevasi + english melengkungkan lintasan', () => {
     const res = simulate(table([0, -0.8, 0]), shot({ speed: 3, elevation: 50 * DEG, tipX: 0.4 }));

@@ -11,6 +11,17 @@ export function squirtAngle(tipX: number, tipY: number, P: PhysicsParams): numbe
 }
 
 /**
+ * Kecepatan stik minimum (m/s) agar cue ball terangkat dari slate (vz ≥ hopThreshold) dengan jump cue.
+ * Kebalikan dari rumus impuls di applyCue: vz = F·sinθ·eJumpCue. Infinity bila elevasi ≤ 0.
+ */
+export function jumpLiftSpeed(elevation: number, tipX: number, tipY: number, P: PhysicsParams): number {
+  const s = Math.sin(elevation);
+  if (s <= 1e-6) return Infinity;
+  const denom = 1 + P.m / P.jumpCueMass + 2.5 * (tipX * tipX + tipY * tipY);
+  return (P.hopThreshold * denom) / ((1 + P.jumpTipRestitution) * s * P.eJumpCue);
+}
+
+/**
  * Pukulan stik → kecepatan + spin awal cue ball.
  * Impuls F sepanjang arah stik d; restitusi tip e di titik kontak:
  *   F = (1+e) V m / (1 + m/M + 5(a²+b²)/(2R²))
@@ -56,8 +67,10 @@ export function applyCue(
   const px = R * (a * rx + bb * ux - c * dx);
   const py = R * (a * ry + bb * uy - c * dy);
   const pz = R * (bb * uz - c * dz);
-  const F =
-    ((1 + P.tipRestitution) * V) / (1 + P.m / P.cueMass + 2.5 * (a * a + bb * bb)); // per satuan massa
+  const jump = shot.cue === 'jump';
+  const eTip = jump ? P.jumpTipRestitution : P.tipRestitution;
+  const M = jump ? P.jumpCueMass : P.cueMass;
+  const F = ((1 + eTip) * V) / (1 + P.m / M + 2.5 * (a * a + bb * bb)); // per satuan massa
   let vx = F * dx;
   let vy = F * dy;
   let vz = F * dz;
@@ -77,7 +90,7 @@ export function applyCue(
   }
   // komponen ke bawah: slate memantulkan (jump) bila cukup besar
   if (vz < 0) {
-    vz = -vz * P.eJump;
+    vz = -vz * (jump ? P.eJumpCue : P.eJump);
     if (vz < P.hopThreshold) vz = 0;
   }
   b.vx = vx;

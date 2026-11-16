@@ -7,6 +7,7 @@ export interface SimRequest {
   shot: ShotParams | null;
   params?: Partial<PhysicsParams>;
   recordFrames?: boolean;
+  maxTime?: number;
 }
 
 const ctx = self as unknown as {
@@ -15,8 +16,8 @@ const ctx = self as unknown as {
 };
 
 ctx.onmessage = (ev) => {
-  const { id, table, shot, params, recordFrames } = ev.data;
+  const { id, table, shot, params, recordFrames, maxTime } = ev.data;
   const t0 = performance.now();
-  const result = simulate(table, shot, { params, recordFrames });
+  const result = simulate(table, shot, { params, recordFrames, maxTime });
   ctx.postMessage({ id, result, ms: performance.now() - t0 });
 };

@@ -34,7 +34,11 @@
     "miscueLimit": 0.5,
     "squirtMaxDeg": 2.0,
     "minSpeed": 0.3,
-    "maxSpeed": 9.0
+    "maxSpeed": 9.0,
+    "jumpLength": 1.02,
+    "jumpMass": 0.3,
+    "jumpTipRestitution": 0.85,
+    "jumpSlateRestitution": 0.4
   },
   "physics": {
     "gravity": 9.81,

@@ -41,6 +41,9 @@ export class Hud {
   private power = el('div', 'power');
   private powerFill = el('i', 'fill');
   private powerMark = el('b', 'mark');
+  /** penanda power minimum agar bola terangkat (jump cue) */
+  private powerLift = el('em', 'lift');
+  private shownLift = '';
   private powerLv = el('span', 'lv');
   private powerSpd = el('small');
   private powerTxt = el('div', 'txt');
@@ -64,7 +67,9 @@ export class Hud {
     this.spin.innerHTML = '<div class="ball"></div>';
     const ball = this.spin.firstElementChild as HTMLElement;
     ball.appendChild(this.spinDot);
+    ball.appendChild(el('div', 'lim'));
     const elev = el('div', 'elev', '<div class="arc"></div>');
+    elev.title = 'Drag ↕ atau scroll untuk mengatur elevasi';
     elev.firstElementChild!.appendChild(this.elevArc);
     elev.appendChild(this.elevTxt);
     this.spin.append(this.spinTxt, elev);
@@ -73,7 +78,8 @@ export class Hud {
     this.power.innerHTML = `<div class="meter"><div class="scale">${labels}</div><div class="track"><div class="ticks"></div></div></div><div class="info"><div class="read"></div></div>`;
     const track = this.power.querySelector('.track')!;
     track.prepend(this.powerFill);
-    track.appendChild(this.powerMark);
+    track.append(this.powerMark, this.powerLift);
+    this.powerLift.title = 'Power minimum agar bola melompat';
     const read = this.power.querySelector('.read')!;
     read.append(this.powerLv, this.powerSpd);
     this.power.querySelector('.info')!.appendChild(this.powerTxt);
@@ -95,6 +101,28 @@ export class Hud {
       if (e.buttons & 1) setFromEvent(e);
     });
     ball.addEventListener('dblclick', () => this.game.setTip(0, 0));
+
+    // widget elevasi: drag vertikal (0,5°/px) atau scroll (±1°)
+    const DEG_RAD = Math.PI / 180;
+    let dragY = 0;
+    elev.addEventListener('pointerdown', (e) => {
+      elev.setPointerCapture(e.pointerId);
+      dragY = e.clientY;
+    });
+    elev.addEventListener('pointermove', (e) => {
+      if (!(e.buttons & 1)) return;
+      const dy = dragY - e.clientY;
+      dragY = e.clientY;
+      if (dy) this.game.elevateBy(dy * 0.5 * DEG_RAD);
+    });
+    elev.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        if (e.deltaY) this.game.elevateBy((e.deltaY < 0 ? 1 : -1) * DEG_RAD);
+      },
+      { passive: false },
+    );
 
     game.on('change', () => this.refresh());
     game.on('toast', (t) => this.toast(t.text, t.kind));
@@ -166,9 +194,11 @@ export class Hud {
     const g = this.game;
     // nilai efektif: dekat rail, elevasi/titik pukul bisa dipaksa naik agar stik melewati rail
     const sk = g.stroke();
-    const key = `${sk.tipX.toFixed(3)},${sk.tipY.toFixed(3)},${(sk.elevation * DEG).toFixed(0)},${sk.railFollow},${sk.railElev}`;
+    const jump = g.cueType === 'jump';
+    const key = `${sk.tipX.toFixed(3)},${sk.tipY.toFixed(3)},${(sk.elevation * DEG).toFixed(0)},${sk.railFollow},${sk.railElev},${jump}`;
     if (key === this.shownStroke) return;
     this.shownStroke = key;
+    this.spin.classList.toggle('jump', jump);
     this.spinDot.style.left = `${50 + sk.tipX * 50}%`;
     this.spinDot.style.top = `${50 - sk.tipY * 50}%`;
     const off = Math.hypot(sk.tipX, sk.tipY);
@@ -177,7 +207,42 @@ export class Hud {
     this.spinTxt.textContent = sk.railFollow ? `${spin} · follow (stik lewat atas)` : spin;
     const ev = sk.elevation;
     this.elevArc.style.transform = `rotate(${-ev * DEG}deg)`;
-    this.elevTxt.textContent = sk.railElev ? `elevasi ${(ev * DEG).toFixed(0)}° · minimum${sk.railFollow ? '' : ' (Q datarkan)'}` : `elevasi ${(ev * DEG).toFixed(0)}°`;
+    this.elevTxt.textContent = jump
+      ? `elevasi ${(ev * DEG).toFixed(0)}° · jump`
+      : sk.railElev
+        ? `elevasi ${(ev * DEG).toFixed(0)}° · minimum${sk.railFollow ? '' : ' (Q datarkan)'}`
+        : `elevasi ${(ev * DEG).toFixed(0)}°`;
+    this.updateLift();
+  }
+
+  /** Penanda power minimum agar bola terangkat (hanya jump cue). */
+  private updateLift(): void {
+    const g = this.game;
+    const lv = g.cueType === 'jump' ? g.jumpLiftLevel() : null;
+    const key = g.cueType !== 'jump' ? 'off' : lv === null ? 'none' : lv.toFixed(2);
+    if (key === this.shownLift) return;
+    this.shownLift = key;
+    this.powerLift.hidden = g.cueType !== 'jump';
+    this.powerLift.classList.toggle('none', lv === null);
+    const f = lv === null ? 1 : (lv - POWER_MIN) / (POWER_MAX - POWER_MIN);
+    this.power.style.setProperty('--lf', f.toFixed(4));
+  }
+
+  /** Ringkasan prediksi jump shot untuk baris status. */
+  private jumpText(): string {
+    const p = this.game.jumpPreview;
+    const v = p.verdict;
+    if (!v) return '<b>Jump cue</b> — menghitung lompatan…';
+    const h = p.apex * 100;
+    const hop = h < 0.3 ? 'bola tidak terangkat (naikkan elevasi/power)' : `lompat ${h.toFixed(1).replace('.', ',')} cm`;
+    const res: Record<typeof v.kind, string> = {
+      target: `kena bola ${'ball' in v ? v.ball : ''} ✓`,
+      wrong: `<span class="bad">menabrak bola ${'ball' in v ? v.ball : ''}</span>`,
+      'off-table': '<span class="bad">keluar meja!</span>',
+      miscue: '<span class="bad">miscue!</span>',
+      'no-hit': 'tidak mengenai bola',
+    };
+    return `<b>Jump cue</b> — ${hop} · ${res[v.kind]}`;
   }
 
   refresh(): void {
@@ -212,8 +277,10 @@ export class Hud {
       else if (g.pushOutArmed) st = '<b>Push-out</b> dinyatakan — pukulan ini tidak wajib mengenai bola';
       else if (m.pushOutAvailable) st = `Bola target: <b>${target}</b> · push-out tersedia`;
       else st = `Bola target: <b>${target}</b>`;
+      if (g.cueType === 'jump') st += ` · ${this.jumpText()}`;
     } else if (g.mode === 'decision') st = `<b>${esc(names[m.currentPlayer])}</b>: main dari posisi ini, atau kembalikan giliran?`;
     else if (g.mode === 'replay') st = `<b>Replay</b> ${g.playSpeed < 1 ? '· slow-motion ' + g.playSpeed + '×' : ''}`;
+    if (g.mode === 'aim' && g.powerActive && g.cueType === 'jump') st += `<br>${this.jumpText()}`;
     this.status.innerHTML = st;
 
     // spin & elevasi
@@ -224,7 +291,7 @@ export class Hud {
     this.power.classList.toggle('armed', aiming && g.powerActive);
     this.powerTxt.innerHTML = g.powerActive
       ? '<b>Bidikan terkunci</b><br><kbd>Mouse ↕</kbd> atur power · <kbd>Scroll</kbd>/<kbd>↑↓</kbd> ±0,1<br><kbd>Space</kbd> pukul · <kbd>Esc</kbd> batal'
-      : '<kbd>Space</kbd> kunci bidikan &amp; atur power<br><kbd>Klik kiri</kbd> tahan, tarik lalu dorong<br><kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi';
+      : '<kbd>Space</kbd> kunci bidikan &amp; atur power<br><kbd>Klik kiri</kbd> tahan, tarik lalu dorong<br><kbd>W A S D</kbd> spin · <kbd>Q</kbd>/<kbd>E</kbd> elevasi · <kbd>J</kbd> jump cue';
 
     // tombol
     this.actions.innerHTML = '';
@@ -240,6 +307,7 @@ export class Hud {
     };
     if (g.mode === 'aim') {
       if (m.pushOutAvailable) btn(g.pushOutArmed ? 'Batalkan push-out' : 'Push-out', () => g.togglePushOut(), g.pushOutArmed ? 'on' : '');
+      if (!g.powerActive) btn(g.cueType === 'jump' ? 'Stik biasa <kbd>J</kbd>' : 'Jump cue <kbd>J</kbd>', () => g.toggleJumpCue(), g.cueType === 'jump' ? 'on' : '');
       if (g.canReplay) btn('Replay <kbd>P</kbd>', () => g.startReplay(1));
       btn('Tampak atas <kbd>T</kbd>', () => g.rig.toggleTop());
       btn('Menu <kbd>Esc</kbd>', () => this.showPause());
@@ -323,7 +391,7 @@ export class Hud {
           <div class="row"><label>Break bergantian</label><input type="checkbox" ${o.alternateBreak ? 'checked' : ''} data-o="alternateBreak"></div>
         </section>
         <section data-pane="settings" hidden>${this.settingsRows(false)}</section>
-        <section data-pane="help" class="keys" hidden><div><kbd>Mouse</kbd><span>Bidik</span></div><div><kbd>Shift</kbd><span>Bidik halus</span></div><div><kbd>Klik kiri</kbd><span>Tarik &amp; dorong = pukul</span></div><div><kbd>Space</kbd><span>Kunci bidikan · power · pukul</span></div><div><kbd>W A S D</kbd><span>Titik pukul (spin)</span></div><div><kbd>Q / E</kbd><span>Elevasi stik</span></div><div><kbd>Klik kanan</kbd><span>Orbit kamera</span></div><div><kbd>Scroll</kbd><span>Zoom</span></div><div><kbd>T</kbd><span>Tampak atas</span></div><div><kbd>R</kbd><span>Reset kamera</span></div><div><kbd>P</kbd><span>Replay</span></div><div><kbd>C</kbd><span>Titik pukul ke tengah</span></div></section>
+        <section data-pane="help" class="keys" hidden><div><kbd>Mouse</kbd><span>Bidik</span></div><div><kbd>Shift</kbd><span>Bidik halus</span></div><div><kbd>Klik kiri</kbd><span>Tarik &amp; dorong = pukul</span></div><div><kbd>Space</kbd><span>Kunci bidikan · power · pukul</span></div><div><kbd>W A S D</kbd><span>Titik pukul (spin)</span></div><div><kbd>Q / E</kbd><span>Elevasi stik</span></div><div><kbd>Klik kanan</kbd><span>Orbit kamera</span></div><div><kbd>Scroll</kbd><span>Zoom</span></div><div><kbd>T</kbd><span>Tampak atas</span></div><div><kbd>R</kbd><span>Reset kamera</span></div><div><kbd>P</kbd><span>Replay</span></div><div><kbd>C</kbd><span>Titik pukul ke tengah</span></div><div><kbd>J</kbd><span>Jump cue on/off</span></div></section>
       </div>
       <button class="primary go"><span>Mulai pertandingan</span><i>→</i></button>`,
       true,

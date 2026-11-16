@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BALL_RADIUS as R } from '@billiards/physics';
+import { BALL_RADIUS as R, CUE_LENGTH, JUMP_CUE_LENGTH } from '@billiards/physics';
 import { toThree } from './coords';
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -63,6 +63,11 @@ export class CueView {
   }
   get visible(): boolean {
     return this.obj.visible;
+  }
+
+  /** Jump cue: stik yang sama dipendekkan dari arah butt (pivot di tip, model memanjang ke −X). */
+  setJump(on: boolean): void {
+    this.obj.scale.x = on ? JUMP_CUE_LENGTH / CUE_LENGTH : 1;
   }
 
   /** Jarak titik (Three) ke ujung tip. */

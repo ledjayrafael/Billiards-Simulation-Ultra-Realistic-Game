@@ -25,6 +25,11 @@ export interface PhysicsParams {
   tipRestitution: number;
   miscueLimit: number;
   squirtMax: number; // rad pada offset = miscueLimit
+  // jump cue: pendek, ringan, tip keras (phenolic)
+  jumpCueMass: number;
+  jumpTipRestitution: number;
+  /** restitusi slate untuk pukulan jump cue (stik ringan lebih sedikit "menahan" bola ke slate) */
+  eJumpCue: number;
   // koefisien
   g: number;
   muSlide: number;
@@ -68,6 +73,9 @@ export const DEFAULT_PARAMS: Readonly<PhysicsParams> = Object.freeze({
   tipRestitution: specs.cue.tipRestitution,
   miscueLimit: specs.cue.miscueLimit,
   squirtMax: specs.cue.squirtMaxDeg * DEG,
+  jumpCueMass: specs.cue.jumpMass,
+  jumpTipRestitution: specs.cue.jumpTipRestitution,
+  eJumpCue: specs.cue.jumpSlateRestitution,
   g: specs.physics.gravity,
   muSlide: specs.physics.muSlide,
   muRoll: specs.physics.muRoll,
@@ -90,6 +98,8 @@ export const TABLE_LENGTH = specs.table.length;
 export const TABLE_WIDTH = specs.table.width;
 export const CUE_MIN_SPEED = specs.cue.minSpeed;
 export const CUE_MAX_SPEED = specs.cue.maxSpeed;
+export const CUE_LENGTH = specs.cue.length;
+export const JUMP_CUE_LENGTH = specs.cue.jumpLength;
 /** Foot spot: tengah lebar, 1/4 panjang dari rail kaki (+x). */
 export const FOOT_SPOT_X = specs.table.length / 4;
 /** Head string: 1/4 panjang dari rail kepala (−x). Kitchen = x <= HEAD_STRING_X. */

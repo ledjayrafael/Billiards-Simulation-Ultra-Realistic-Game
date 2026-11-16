@@ -270,6 +270,9 @@ export class Controls {
       case 'KeyC':
         g.setTip(0, 0);
         break;
+      case 'KeyJ':
+        g.toggleJumpCue();
+        break;
     }
   }
 

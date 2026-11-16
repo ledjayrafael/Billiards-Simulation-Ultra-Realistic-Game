@@ -50,6 +50,9 @@ export class CameraRig {
   private shotYaw = 0;
   private shotAnchor: [number, number] = [0, 0];
   private shotBreak = false;
+  private shotJump = false;
+  /** arah pukulan (tanpa offset samping kamera jump) */
+  private shotAim = 0;
 
   // sinematik
   private mixer: THREE.AnimationMixer;
@@ -101,12 +104,16 @@ export class CameraRig {
     this.tilt(dpitch);
   }
 
-  startShot(ctx: RigContext, isBreak: boolean): void {
+  /** jump = kamera lebih rendah & menyamping sedikit agar lengkungan lompatan terbaca. */
+  startShot(ctx: RigContext, isBreak: boolean, jump = false): void {
     if (this.mode === 'top') return;
     this.mode = 'shot';
     this.shotYaw = ctx.aimDir + this.orbitYaw;
+    this.shotAim = this.shotYaw;
     this.shotAnchor = [ctx.cueX, ctx.cueY];
     this.shotBreak = isBreak;
+    this.shotJump = jump && !isBreak;
+    if (this.shotJump) this.shotYaw += 0.5;
     this.stiff = 1.2;
   }
   endShot(): void {
@@ -179,13 +186,13 @@ export class CameraRig {
         toThree(0.3, 0, 0, tmpLook);
       } else {
         const d = this.dist * 1.12 + 0.28;
-        const p = Math.max(this.pitch + 0.1, 0.42);
+        const p = this.shotJump ? 0.2 : Math.max(this.pitch + 0.1, 0.42);
         const cy = Math.cos(this.shotYaw);
         const sy = Math.sin(this.shotYaw);
         const [ax, ay] = this.shotAnchor;
         toThree(ax - cy * d * Math.cos(p), ay - sy * d * Math.cos(p), R + d * Math.sin(p) + 0.05, tmpPos);
-        const lx = ax + cy * 0.4;
-        const ly = ay + sy * 0.4;
+        const lx = ax + Math.cos(this.shotAim) * 0.4;
+        const ly = ay + Math.sin(this.shotAim) * 0.4;
         toThree(lx + (ctx.focusX - lx) * 0.6, ly + (ctx.focusY - ly) * 0.6, R, tmpLook);
       }
     } else {

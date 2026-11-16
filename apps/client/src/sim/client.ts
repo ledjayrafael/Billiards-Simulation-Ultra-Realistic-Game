@@ -20,7 +20,7 @@ export class SimClient {
   simulate(
     table: TableState,
     shot: ShotParams | null,
-    opts: { params?: Partial<PhysicsParams>; recordFrames?: boolean } = {},
+    opts: { params?: Partial<PhysicsParams>; recordFrames?: boolean; maxTime?: number } = {},
   ): Promise<{ result: ShotResult; ms: number }> {
     const id = this.nextId++;
     return new Promise((resolve) => {

@@ -17,7 +17,11 @@ export interface ShotParams {
   tipY: number;
   /** Elevasi stik (rad), 0 = mendatar. */
   elevation: number;
+  /** Jenis stik; default 'standard'. Jump cue: lebih ringan, tip keras → bola lebih mudah melompat. */
+  cue?: CueType;
 }
+
+export type CueType = 'standard' | 'jump';
 
 export type BallMotion =
   | 'stationary'
