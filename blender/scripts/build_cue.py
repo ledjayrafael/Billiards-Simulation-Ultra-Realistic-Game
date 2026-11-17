@@ -7,6 +7,9 @@
                Inlay dilukis prosedural (numpy) ke tekstur per bagian; tanpa logo/teks merek.
 - Cue_sp2pink: "Predator SP2 Pink" — shaft carbon hitam, collar abu-abu matte, forearm pink pearl dengan
                2 ujung tombak hitam, wrap kulit hitam bertekstur, butt cap pink, bumper hitam.
+- Cue_cp21   : "Mezz Cue CP21" — shaft maple natural, collar hitam ber-ring putih, forearm curly maple
+               dengan 4 ujung tombak hitam tipis, wrap hitam, ring curly maple + butt sleeve hitam
+               ber-pinstripe putih, bumper hitam. Tanpa logo/teks merek.
 
 Panjang & id model dari blender/specs.json → cues."""
 import math
@@ -433,8 +436,125 @@ def build_sp2pink():
     return build_parts(spec["model"], parts, mats, 40)
 
 
+# ───────────────────────── Mezz Cue CP21 ─────────────────────────
+
+MAPLE_LIGHT = np.array([0.93, 0.86, 0.72])
+MAPLE_DARK = np.array([0.80, 0.69, 0.52])
+WHITE = np.array([0.94, 0.93, 0.90])
+
+
+def curly_maple(h, w, rng):
+    """Maple curly/tiger natural: belang lembut + garis 'curl' melintang yang berkilau."""
+    blotch = pnoise(h, w, 20, 40, rng)
+    streak = pnoise(h, w, 2.5, 40, rng)
+    curl = np.sin(np.arange(w)[None, :] * 0.16 + 5 * pnoise(h, w, 25, 25, rng))
+    val = 0.62 + 0.18 * blotch + 0.10 * streak + 0.12 * np.clip(curl, 0, 1) ** 2
+    val = np.clip(val, 0, 1)[..., None]
+    return MAPLE_DARK + (MAPLE_LIGHT - MAPLE_DARK) * val
+
+
+def cp21_forearm_texture(rng, W=2048, H=512):
+    """Forearm CP21: u=0 di joint, u=1 di wrap. Curly maple dengan 4 tombak hitam tipis
+    (veneer putih di dalam tepinya) yang bertumpu di wrap dan meruncing ke joint."""
+    U, V = np.meshgrid(np.arange(W, dtype=np.float64), np.arange(H, dtype=np.float64))
+    img = curly_maple(H, W, rng)
+    n = 4
+    pitch = H / n
+    for k in range(n):
+        dv = np.abs(wrapdv(V, (k + 0.5) * pitch, H))
+        hw = spear_hw(U, 120, W - 1, 0.20 * pitch, 1.0)
+        paint(img, sdf_mask(dv - hw) * (hw > 0), BLACK)
+        hl = hw - 4
+        paint(img, sdf_mask(np.abs(dv - hl) - 0.9) * (hl > 1.5), WHITE)
+        hi = hw - 7
+        paint(img, sdf_mask(dv - hi) * (hi > 0), BLACK)
+    return np.clip(img, 0, 1)
+
+
+def cp21_band_texture(rng, W=256, H=512, base="maple"):
+    """Ring di bawah wrap: curly maple (atau hitam) dengan pinstripe putih memanjang
+    + garis putih melingkar tipis di dekat tepi."""
+    U, V = np.meshgrid(np.arange(W, dtype=np.float64), np.arange(H, dtype=np.float64))
+    if base == "maple":
+        img = curly_maple(H, W, rng)
+    else:
+        img = np.broadcast_to(BLACK, (H, W, 3)).copy()
+        img *= 1 + 0.15 * pnoise(H, W, 6, 6, rng)[..., None]
+    for k in range(4):
+        da = np.abs(wrapdv(V, (k + 0.5) * H / 4, H))
+        paint(img, sdf_mask(da - 1.1), WHITE)
+    if base != "maple":
+        for x in (18.0, 30.0, W - 31.0, W - 19.0):
+            paint(img, sdf_mask(np.abs(U - x) - 1.3), WHITE)
+    return np.clip(img, 0, 1)
+
+
+def build_cp21():
+    spec = CUES["cp21"]
+    L = spec["length"]
+    rt = CUE["tipDiameter"] / 2
+    rng = np.random.default_rng(21)
+    md = C.load_image("white_maple_veneer_diff.jpg")
+    mn = C.load_image("white_maple_veneer_nor.jpg", "Non-Color")
+    ld = C.load_image("brown_leather_diff.jpg")
+    ln = C.load_image("brown_leather_nor.jpg", "Non-Color")
+    fore = C.save_image("cp21_forearm", cp21_forearm_texture(rng))
+    mband = C.save_image("cp21_maple_band", cp21_band_texture(rng, base="maple"))
+    bband = C.save_image("cp21_black_band", cp21_band_texture(rng, base="black"))
+    mats = {
+        "tip": C.make_material("CP21Tip", color=(0.07, 0.05, 0.035), rough=0.9),
+        "ferrule": C.make_material("CP21Ferrule", color=(0.92, 0.91, 0.87), rough=0.3),
+        # maple natural pucat, satin
+        "shaft": C.make_material("CP21Shaft", diff=md, nor=mn, rough=0.3, tint=(1.0, 0.96, 0.87), coat=0.5, coat_rough=0.08, normal_strength=0.5),
+        "black": C.make_material("CP21Black", color=(0.01, 0.01, 0.012), rough=0.25, coat=1.0, coat_rough=0.05),
+        "white": C.make_material("CP21White", color=(0.86, 0.85, 0.82), rough=0.3, coat=1.0, coat_rough=0.05),
+        "forearm": C.make_material("CP21Forearm", diff=fore, rough=0.22, coat=1.0, coat_rough=0.04),
+        "mband": C.make_material("CP21MapleBand", diff=mband, rough=0.22, coat=1.0, coat_rough=0.04),
+        "bband": C.make_material("CP21BlackBand", diff=bband, rough=0.25, coat=1.0, coat_rough=0.05),
+        "wrap": C.make_material("CP21Wrap", diff=ld, nor=ln, rough=0.6, tint=(0.016, 0.016, 0.018), uv_scale=(26, 26), normal_strength=3.0),
+        "rubber": C.make_material("CP21Bumper", color=(0.012, 0.012, 0.013), rough=0.8),
+    }
+    taper = make_taper(L, rt)
+
+    def seg(a, b, n=6):
+        return [(a + (b - a) * i / n, taper(a + (b - a) * i / n)) for i in range(n + 1)]
+
+    def bands(d0, spec_list):
+        out, d = [], d0
+        for length, mat in spec_list:
+            out.append((mat, [(d, taper(d)), (d + length, taper(d + length))]))
+            d += length
+        return out, d
+
+    parts = [
+        ("tip", [(0.0, rt * 0.55), (0.0012, rt * 0.86), (0.0035, rt * 0.99), (0.008, rt)]),
+        ("ferrule", [(0.008, rt), (0.020, rt)]),
+        ("shaft", seg(0.020, 0.700, 16)),
+    ]
+    # collar shaft hitam dengan dua ring putih tipis, lalu collar joint butt hitam ber-ring putih
+    b, d = bands(0.700, [(0.010, "black"), (0.0008, "white"), (0.0025, "black"), (0.0008, "white"), (0.0119, "black")])
+    parts += b
+    b, d = bands(d, [(0.012, "black"), (0.0008, "white"), (0.0025, "black"), (0.0008, "white"), (0.004, "black")])
+    parts += b
+    f0, f1 = d, 1.072
+    parts.append(("forearm", seg(f0, f1, 14), (f0, f1)))
+    b, d = bands(f1, [(0.003, "black")])
+    parts += b
+    w0, w1 = d, 1.372
+    parts.append(("wrap", seg(w0, w1, 8)))
+    b, d = bands(w1, [(0.002, "black")])
+    parts += b
+    m0, m1 = d, d + 0.040
+    parts.append(("mband", seg(m0, m1, 2), (m0, m1)))
+    s0, s1 = m1, L - 0.018
+    parts.append(("bband", seg(s0, s1, 2), (s0, s1)))
+    rb = taper(s1)
+    parts.append(("rubber", [(s1, rb * 0.96), (L - 0.006, rb * 0.94), (L - 0.001, rb * 0.8), (L, rb * 0.5)]))
+    return build_parts(spec["model"], parts, mats, 40)
+
+
 def build():
-    return [build_local(), build_ikon45(), build_sp2pink()]
+    return [build_local(), build_ikon45(), build_sp2pink(), build_cp21()]
 
 
 def studio_preview(obj, out_dir, samples=64):

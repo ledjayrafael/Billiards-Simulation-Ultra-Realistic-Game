@@ -76,6 +76,20 @@
       "note": "shaft carbon hitam low deflection, butt pink"
     },
     {
+      "id": "cp21",
+      "name": "Mezz Cue CP21",
+      "category": "play",
+      "model": "Cue_cp21",
+      "length": 1.47,
+      "power": 8.6,
+      "spin": 9,
+      "deflection": 9.1,
+      "miscueLimit": 0.55,
+      "mass": 0.55,
+      "tipRestitution": 0.78,
+      "note": "shaft maple low deflection, forearm curly maple, wrap hitam"
+    },
+    {
       "id": "jump",
       "name": "Jump Break",
       "category": "jump-break",
