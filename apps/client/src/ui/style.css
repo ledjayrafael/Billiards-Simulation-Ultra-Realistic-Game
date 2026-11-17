@@ -64,7 +64,7 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 .spin.jump .ball .lim { display: block; }
 .spin .ball .mis { position: absolute; border-radius: 50%; border: 1.5px dashed rgba(226, 87, 76, 0.75); pointer-events: none; }
 .status .cuename { font-size: 12px; color: var(--muted); }
-.cuemenu { position: absolute; right: 22px; bottom: 262px; width: 300px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
+.cuemenu { position: absolute; right: 22px; bottom: 262px; width: 324px; max-height: calc(100vh - 290px); overflow-y: auto; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
 .cuemenu[hidden] { display: none; }
 .cuemenu .head { font: 600 13px var(--sans); display: flex; justify-content: space-between; align-items: center; }
 .cuemenu .grp { margin-top: 6px; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
@@ -72,7 +72,10 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 .cuemenu .item.active { border-color: var(--brass); }
 .cuemenu .item .nm { font-weight: 600; }
 .cuemenu .item .nm em { font: 500 10px var(--sans); font-style: normal; color: var(--brass); margin-left: 4px; }
-.cuemenu .item .ld { display: flex; align-items: center; gap: 8px; font: 600 11px var(--sans); color: var(--ivory); font-variant-numeric: tabular-nums; }
+.cuemenu .item .thumb { display: block; width: 100%; height: auto; aspect-ratio: 280 / 44; margin: -2px 0 2px; border-radius: 8px; background: radial-gradient(ellipse at 50% 60%, rgba(255, 255, 255, 0.07), transparent 70%); pointer-events: none; }
+.cuemenu .item .stats { display: grid; grid-template-columns: auto 1fr 18px; align-items: center; gap: 3px 8px; font: 600 10px var(--sans); color: var(--ivory); font-variant-numeric: tabular-nums; }
+.cuemenu .item .stats .lb { letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.cuemenu .item .stats .v { text-align: right; }
 .cuemenu .item .bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .cuemenu .item .bar i { display: block; height: 100%; background: linear-gradient(90deg, #c9a45c, #6fc48a); }
 .cuemenu .item .meta { font: 400 11px var(--sans); color: var(--muted); }

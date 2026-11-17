@@ -26,6 +26,8 @@ export interface PhysicsParams {
   tipRestitution: number;
   miscueLimit: number;
   squirtMax: number; // rad pada offset = miscueLimit
+  cuePower: number; // pengali kecepatan ayunan (1 = stik lokal)
+  cueSpin: number; // pengali spin yang ditransfer tip (1 = stik lokal)
   // koefisien
   g: number;
   muSlide: number;
@@ -57,11 +59,20 @@ export function cueSpec(id: string | undefined): CueSpec {
   const key = id === undefined || id === 'standard' ? DEFAULT_CUE_ID : id;
   return CUES.find((c) => c.id === key) ?? CUES.find((c) => c.id === DEFAULT_CUE_ID)!;
 }
-/** Sudut squirt maksimum (deg, pada offset = miscueLimit) dari rating low deflection 1..10. */
-export function squirtMaxDeg(ldRating: number): number {
-  return 3.0 - 0.25 * Math.min(10, Math.max(1, ldRating));
+const clampRating = (r: number): number => Math.min(10, Math.max(1, r));
+/** Sudut squirt maksimum (deg, pada offset = miscueLimit) dari rating DEFLECTION 1..10. */
+export function squirtMaxDeg(deflection: number): number {
+  return 3.0 - 0.25 * clampRating(deflection);
 }
 const LOCAL = cueSpec(DEFAULT_CUE_ID);
+/** Pengali kecepatan ayunan dari rating POWER 1..10; stik lokal = 1 (≈ +2,5% per poin di atasnya). */
+export function cuePowerFactor(power: number): number {
+  return 1 + 0.025 * (clampRating(power) - LOCAL.power);
+}
+/** Pengali spin dari rating SPIN 1..10; stik lokal = 1 (≈ +4% per poin di atasnya). */
+export function cueSpinFactor(spin: number): number {
+  return 1 + 0.04 * (clampRating(spin) - LOCAL.spin);
+}
 
 export const DEFAULT_PARAMS: Readonly<PhysicsParams> = Object.freeze({
   L: specs.table.length,
@@ -83,7 +94,9 @@ export const DEFAULT_PARAMS: Readonly<PhysicsParams> = Object.freeze({
   cueMass: LOCAL.mass,
   tipRestitution: LOCAL.tipRestitution,
   miscueLimit: LOCAL.miscueLimit,
-  squirtMax: squirtMaxDeg(LOCAL.ldRating) * DEG,
+  squirtMax: squirtMaxDeg(LOCAL.deflection) * DEG,
+  cuePower: cuePowerFactor(LOCAL.power),
+  cueSpin: cueSpinFactor(LOCAL.spin),
   g: specs.physics.gravity,
   muSlide: specs.physics.muSlide,
   muRoll: specs.physics.muRoll,

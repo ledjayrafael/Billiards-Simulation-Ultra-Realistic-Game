@@ -5,6 +5,8 @@ import { cueParams, firstDownCrossing, jumpLiftSpeed, realRootsInInterval, simul
 import { collideBalls } from '../src/collide/ballBall';
 import { collideCushion } from '../src/collide/cushion';
 import { toBody, fromBody } from '../src/ball';
+import { applyCue } from '../src/cue';
+import { CUES } from '../src/constants';
 import { classify } from '../src/motion';
 import { DEG, P, R, ball, heading, kineticEnergy, posAt, shot, table } from './helpers';
 
@@ -389,6 +391,27 @@ describe('pocket & lain-lain', () => {
       simulate(table([0, -0.8, 0]), { ...shot({ speed: 2, tipX: 0.5 }), cue }).events.some((e) => e.type === 'miscue');
     expect(miscue('local')).toBe(true);
     expect(miscue('ikon45')).toBe(false);
+  });
+  it('POWER/SPIN: stik lokal faktor 1, Predator memberi kecepatan & spin lebih besar', () => {
+    expect(cueParams('local', P).power).toBe(1);
+    expect(cueParams('local', P).spin).toBe(1);
+    const hit = (cue: string): { v: number; w: number } => {
+      const b = toBody(makeBall(0, 0, 0, R));
+      const { speed } = applyCue(b, { ...shot({ speed: 2, tipY: 0.3 }), cue }, P);
+      return { v: speed, w: Math.hypot(b.wx, b.wy, b.wz) };
+    };
+    const local = hit('local');
+    const ikon = hit('ikon45');
+    expect(ikon.v).toBeGreaterThan(local.v * 1.1);
+    expect(ikon.w / ikon.v).toBeGreaterThan((local.w / local.v) * 1.15);
+  });
+  it('stik lokal paling rendah di POWER, SPIN, DEFLECTION', () => {
+    const local = CUES.find((c) => c.id === 'local')!;
+    for (const c of CUES) {
+      expect(c.power).toBeGreaterThanOrEqual(local.power);
+      expect(c.spin).toBeGreaterThanOrEqual(local.spin);
+      expect(c.deflection).toBeGreaterThanOrEqual(local.deflection);
+    }
   });
   it("id lama 'standard' = stik lokal", () => {
     const a = simulate(table([0, -0.8, 0]), { ...shot({ speed: 2, tipX: 0.3 }), cue: 'standard' });

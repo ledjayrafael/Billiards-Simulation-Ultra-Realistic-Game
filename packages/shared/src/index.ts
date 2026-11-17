@@ -34,8 +34,12 @@ export interface CueSpec {
   model: string;
   /** panjang (m) */
   length: number;
-  /** rating low deflection 1..10 (makin tinggi makin kecil squirt saat english) */
-  ldRating: number;
+  /** rating POWER 1..10: makin tinggi makin besar kecepatan bola dari ayunan yang sama */
+  power: number;
+  /** rating SPIN 1..10: makin tinggi makin besar spin yang ditransfer tip */
+  spin: number;
+  /** rating DEFLECTION (low deflection) 1..10: makin tinggi makin kecil squirt saat english */
+  deflection: number;
   /** offset tip (pecahan R) di atas mana pukulan miscue */
   miscueLimit: number;
   mass: number;

@@ -4,6 +4,7 @@ import type { CueCategory, CueSpec, MatchOptions } from '@billiards/shared';
 import type { Game } from '../game/game';
 import { POWER_MAX, POWER_MIN, powerSpeed } from '../game/power';
 import { saveSettings, type Settings } from '../game/settings';
+import { cueThumbnails } from '../render/cueThumbs';
 
 const BALL_COLORS = ['#f4f1e6', '#f2c12e', '#1f55b5', '#d12a20', '#5c2d91', '#f07a1c', '#1f8a4c', '#8a2424', '#1a1a1a', '#f2c12e'];
 const DEG = 180 / Math.PI;
@@ -276,6 +277,9 @@ export class Hud {
       ['jump-break', 'Jump Break'],
     ];
     const tol = (lim: number): string => (lim >= 0.53 ? 'tinggi' : lim >= 0.48 ? 'sedang' : 'rendah');
+    const stat = (label: string, v: number): string =>
+      `<span class="lb">${label}</span><span class="bar"><i style="width:${v * 10}%"></i></span><span class="v">${v}</span>`;
+    const thumbs = cueThumbnails(CUES, g.world.cues);
     this.cueMenu.innerHTML =
       `<div class="head">Pilih stik <kbd>K</kbd></div>` +
       groups
@@ -285,8 +289,9 @@ export class Hud {
             CUES.filter((c) => c.category === cat)
               .map(
                 (c) => `<button class="item ${c.id === g.cueId ? 'active' : ''}" data-id="${c.id}">
+                  ${thumbs.has(c.id) ? `<img class="thumb" src="${thumbs.get(c.id)}" alt="" draggable="false">` : ''}
                   <span class="nm">${esc(c.name)}${c.id === g.playCue && cat === 'play' ? ' <em>dipakai</em>' : ''}</span>
-                  <span class="ld"><span class="bar"><i style="width:${c.ldRating * 10}%"></i></span>LD ${c.ldRating.toFixed(1)}</span>
+                  <span class="stats">${stat('Power', c.power)}${stat('Spin', c.spin)}${stat('Deflection', c.deflection)}</span>
                   <span class="meta">toleransi miscue ${tol(c.miscueLimit)} · ${esc(c.note)}</span>
                 </button>`,
               )
@@ -338,7 +343,7 @@ export class Hud {
     } else if (g.mode === 'decision') st = `<b>${esc(names[m.currentPlayer])}</b>: main dari posisi ini, atau kembalikan giliran?`;
     else if (g.mode === 'replay') st = `<b>Replay</b> ${g.playSpeed < 1 ? '· slow-motion ' + g.playSpeed + '×' : ''}`;
     if (g.mode === 'aim' && g.powerActive && g.isJumpCue) st += `<br>${this.jumpText()}`;
-    if (g.mode === 'aim') st += `<br><span class="cuename">${esc(g.cue.name)} · LD ${g.cue.ldRating.toFixed(1)}</span>`;
+    if (g.mode === 'aim') st += `<br><span class="cuename">${esc(g.cue.name)} · P${g.cue.power} · S${g.cue.spin} · D${g.cue.deflection}</span>`;
     this.status.innerHTML = st;
 
     // spin & elevasi
