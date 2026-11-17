@@ -5,6 +5,8 @@
                forearm birdseye abu-abu dengan inlay ujung tombak krem/hitam + batu turquoise,
                ring berlian turquoise, wrap kulit hitam bertekstur, butt sleeve ber-inlay, butt cap krem.
                Inlay dilukis prosedural (numpy) ke tekstur per bagian; tanpa logo/teks merek.
+- Cue_sp2pink: "Predator SP2 Pink" — shaft carbon hitam, collar abu-abu matte, forearm pink pearl dengan
+               2 ujung tombak hitam, wrap kulit hitam bertekstur, butt cap pink, bumper hitam.
 
 Panjang & id model dari blender/specs.json → cues."""
 import math
@@ -341,8 +343,98 @@ def build_ikon45():
     return build_parts(spec["model"], parts, mats, 40)
 
 
+# ───────────────────────── Predator SP2 Pink ─────────────────────────
+
+PINK = np.array([0.90, 0.24, 0.50])
+PINK_DEEP = np.array([0.70, 0.12, 0.34])
+
+
+def pearl_pink(h, w, rng):
+    """Cat pink metalik/pearl: belang halus + serpih kilau kecil."""
+    blotch = pnoise(h, w, 18, 30, rng)
+    t = np.clip(0.55 + 0.25 * blotch, 0, 1)[..., None]
+    img = PINK_DEEP + (PINK - PINK_DEEP) * t
+    flake = rng.random((h, w))
+    img += np.where(flake > 0.985, 0.18, 0.0)[..., None]
+    return np.clip(img, 0, 1)
+
+
+def sp2_forearm_texture(rng, W=2048, H=512):
+    """Forearm SP2: u=0 di collar joint, u=1 di wrap. Pink pearl dengan 2 ujung tombak hitam lebar
+    (pinstripe pink di dalam tepinya) yang bertumpu di wrap dan meruncing ke joint."""
+    U, V = np.meshgrid(np.arange(W, dtype=np.float64), np.arange(H, dtype=np.float64))
+    img = pearl_pink(H, W, rng)
+    pink = img.copy()
+    n = 2
+    pitch = H / n
+    for k in range(n):
+        dv = np.abs(wrapdv(V, k * pitch, H))  # v=0 / 0.5 = sisi samping (terlihat dari samping)
+        hw = spear_hw(U, 220, W - 1, 0.46 * pitch, 1.1)
+        paint(img, sdf_mask(dv - hw) * (hw > 0), BLACK)
+        hl = hw - 9
+        paint(img, sdf_mask(np.abs(dv - hl) - 1.8) * (hl > 2), pink)
+    return np.clip(img, 0, 1)
+
+
+def build_sp2pink():
+    spec = CUES["sp2pink"]
+    L = spec["length"]
+    rt = CUE["tipDiameter"] / 2
+    rng = np.random.default_rng(2)
+    ld = C.load_image("brown_leather_diff.jpg")
+    ln = C.load_image("brown_leather_nor.jpg", "Non-Color")
+    fore = C.save_image("sp2pink_forearm", sp2_forearm_texture(rng))
+    mats = {
+        "tip": C.make_material("SP2Tip", color=(0.012, 0.014, 0.02), rough=0.9),
+        "ferrule": C.make_material("SP2Ferrule", color=(0.02, 0.02, 0.022), rough=0.4),
+        # shaft carbon hitam: satin, clear coat tipis
+        "shaft": C.make_material("SP2Carbon", color=(0.012, 0.012, 0.014), rough=0.38, coat=0.5, coat_rough=0.15),
+        "collar": C.make_material("SP2Collar", color=(0.06, 0.06, 0.065), rough=0.55),
+        "black": C.make_material("SP2Black", color=(0.01, 0.01, 0.012), rough=0.25, coat=1.0, coat_rough=0.05),
+        "steel": C.make_material("SP2Steel", color=(0.7, 0.71, 0.73), rough=0.25, metallic=1.0),
+        "forearm": C.make_material("SP2Forearm", diff=fore, rough=0.25, coat=1.0, coat_rough=0.04),
+        "pink": C.make_material("SP2Pink", color=(0.66, 0.045, 0.17), rough=0.25, coat=1.0, coat_rough=0.04),
+        "wrap": C.make_material("SP2Wrap", diff=ld, nor=ln, rough=0.62, tint=(0.018, 0.018, 0.02), uv_scale=(22, 22), normal_strength=3.5),
+        "rubber": C.make_material("SP2Bumper", color=(0.012, 0.012, 0.013), rough=0.8),
+    }
+    taper = make_taper(L, rt)
+
+    def seg(a, b, n=6):
+        return [(a + (b - a) * i / n, taper(a + (b - a) * i / n)) for i in range(n + 1)]
+
+    def bands(d0, spec_list):
+        out, d = [], d0
+        for length, mat in spec_list:
+            out.append((mat, [(d, taper(d)), (d + length, taper(d + length))]))
+            d += length
+        return out, d
+
+    parts = [
+        ("tip", [(0.0, rt * 0.55), (0.0012, rt * 0.86), (0.0035, rt * 0.99), (0.008, rt)]),
+        ("ferrule", [(0.008, rt), (0.016, rt)]),
+        ("shaft", seg(0.016, 0.700, 16)),
+    ]
+    # collar shaft hitam, sambungan baja tipis, collar butt abu-abu matte, lalu pink dengan dua garis hitam
+    b, d = bands(0.700, [(0.024, "black")])
+    parts += b
+    parts.append(("steel", [(d, taper(d) - 0.0004), (d + 0.0008, taper(d + 0.0008) - 0.0004)]))
+    b, d = bands(d + 0.0008, [(0.040, "collar"), (0.030, "pink"), (0.0012, "black"), (0.004, "pink"), (0.0012, "black")])
+    parts += b
+    f0, f1 = d, 1.075
+    parts.append(("forearm", seg(f0, f1, 14), (f0, f1)))
+    b, d = bands(f1, [(0.004, "black")])
+    parts += b
+    w0, w1 = d, 1.415
+    parts.append(("wrap", seg(w0, w1, 8)))
+    b, d = bands(w1, [(0.003, "black"), (0.034, "pink")])
+    parts += b
+    rb = taper(d)
+    parts.append(("rubber", [(d, rb), (L - 0.006, rb * 0.97), (L - 0.001, rb * 0.8), (L, rb * 0.5)]))
+    return build_parts(spec["model"], parts, mats, 40)
+
+
 def build():
-    return [build_local(), build_ikon45()]
+    return [build_local(), build_ikon45(), build_sp2pink()]
 
 
 def studio_preview(obj, out_dir, samples=64):

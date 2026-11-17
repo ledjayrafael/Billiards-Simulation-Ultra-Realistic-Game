@@ -62,6 +62,20 @@
       "note": "shaft kayu premium low deflection, cocok untuk efek"
     },
     {
+      "id": "sp2pink",
+      "name": "Predator SP2 Pink",
+      "category": "play",
+      "model": "Cue_sp2pink",
+      "length": 1.47,
+      "power": 8,
+      "spin": 6,
+      "deflection": 8,
+      "miscueLimit": 0.52,
+      "mass": 0.55,
+      "tipRestitution": 0.77,
+      "note": "shaft carbon hitam low deflection, butt pink"
+    },
+    {
       "id": "jump",
       "name": "Jump Break",
       "category": "jump-break",
