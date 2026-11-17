@@ -1,3 +1,4 @@
+import type { CueSpec } from '@billiards/shared';
 import specs from '../../../blender/specs.json';
 
 /** Semua parameter fisik; nilai default berasal dari blender/specs.json. */
@@ -20,16 +21,11 @@ export interface PhysicsParams {
   // bola
   R: number;
   m: number;
-  // stik
+  // stik default ('local'); stik lain memakai nilai katalog CUES (lihat cueParams di cue.ts)
   cueMass: number;
   tipRestitution: number;
   miscueLimit: number;
   squirtMax: number; // rad pada offset = miscueLimit
-  // jump cue: pendek, ringan, tip keras (phenolic)
-  jumpCueMass: number;
-  jumpTipRestitution: number;
-  /** restitusi slate untuk pukulan jump cue (stik ringan lebih sedikit "menahan" bola ke slate) */
-  eJumpCue: number;
   // koefisien
   g: number;
   muSlide: number;
@@ -52,6 +48,21 @@ const DEG = Math.PI / 180;
 
 export const SPECS = specs;
 
+/** Katalog stik (urutan = urutan di menu). */
+export const CUES: readonly CueSpec[] = Object.freeze(specs.cues.map((c) => Object.freeze({ ...c }) as CueSpec));
+export const DEFAULT_CUE_ID = 'local';
+export const JUMP_CUE_ID = 'jump';
+/** Id stik dari ShotParams.cue (termasuk nilai lama 'standard') → spesifikasi; fallback 'local'. */
+export function cueSpec(id: string | undefined): CueSpec {
+  const key = id === undefined || id === 'standard' ? DEFAULT_CUE_ID : id;
+  return CUES.find((c) => c.id === key) ?? CUES.find((c) => c.id === DEFAULT_CUE_ID)!;
+}
+/** Sudut squirt maksimum (deg, pada offset = miscueLimit) dari rating low deflection 1..10. */
+export function squirtMaxDeg(ldRating: number): number {
+  return 3.0 - 0.25 * Math.min(10, Math.max(1, ldRating));
+}
+const LOCAL = cueSpec(DEFAULT_CUE_ID);
+
 export const DEFAULT_PARAMS: Readonly<PhysicsParams> = Object.freeze({
   L: specs.table.length,
   W: specs.table.width,
@@ -69,13 +80,10 @@ export const DEFAULT_PARAMS: Readonly<PhysicsParams> = Object.freeze({
   jawTipRadius: specs.table.jawTipRadius,
   R: specs.ball.radius,
   m: specs.ball.mass,
-  cueMass: specs.cue.mass,
-  tipRestitution: specs.cue.tipRestitution,
-  miscueLimit: specs.cue.miscueLimit,
-  squirtMax: specs.cue.squirtMaxDeg * DEG,
-  jumpCueMass: specs.cue.jumpMass,
-  jumpTipRestitution: specs.cue.jumpTipRestitution,
-  eJumpCue: specs.cue.jumpSlateRestitution,
+  cueMass: LOCAL.mass,
+  tipRestitution: LOCAL.tipRestitution,
+  miscueLimit: LOCAL.miscueLimit,
+  squirtMax: squirtMaxDeg(LOCAL.ldRating) * DEG,
   g: specs.physics.gravity,
   muSlide: specs.physics.muSlide,
   muRoll: specs.physics.muRoll,
@@ -99,7 +107,6 @@ export const TABLE_WIDTH = specs.table.width;
 export const CUE_MIN_SPEED = specs.cue.minSpeed;
 export const CUE_MAX_SPEED = specs.cue.maxSpeed;
 export const CUE_LENGTH = specs.cue.length;
-export const JUMP_CUE_LENGTH = specs.cue.jumpLength;
 /** Foot spot: tengah lebar, 1/4 panjang dari rail kaki (+x). */
 export const FOOT_SPOT_X = specs.table.length / 4;
 /** Head string: 1/4 panjang dari rail kepala (−x). Kitchen = x <= HEAD_STRING_X. */

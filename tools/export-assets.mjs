@@ -60,7 +60,7 @@ const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 
-const MAX_TEX = { 'table.glb': 2048, 'room.glb': 2048, 'cue.glb': 1024, 'balls.glb': 4096 };
+const MAX_TEX = { 'table.glb': 2048, 'room.glb': 2048, 'cue.glb': 2048, 'balls.glb': 4096 };
 for (const name of ['table.glb', 'balls.glb', 'cue.glb', 'room.glb', 'cameras.glb']) {
   const src = join(rawDir, name);
   if (!existsSync(src)) continue;
@@ -125,10 +125,12 @@ for (const id of [0, 5, 9]) {
   check(`bola ${id}: diameter`, b.max[0] - b.min[0], 2 * specs.ball.radius);
   check(`bola ${id}: diameter (vertikal)`, b.max[1] - b.min[1], 2 * specs.ball.radius);
 }
-{
-  const b = await nodeBounds('cue.glb', 'Cue');
-  check('stik: panjang', b.max[0] - b.min[0], specs.cue.length);
-  check('stik: tip di origin', b.max[0], 0);
+for (const model of new Set(specs.cues.map((c) => c.model))) {
+  // model dipakai dengan panjang aslinya oleh stik play; jump cue = model yang diperpendek di client
+  const len = specs.cues.find((c) => c.model === model && c.category === 'play')?.length ?? specs.cue.length;
+  const b = await nodeBounds('cue.glb', model);
+  check(`stik ${model}: panjang`, b.max[0] - b.min[0], len);
+  check(`stik ${model}: tip di origin`, b.max[0], 0);
 }
 
 let total = 0;

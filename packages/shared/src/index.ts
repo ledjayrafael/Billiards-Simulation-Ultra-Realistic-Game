@@ -17,11 +17,33 @@ export interface ShotParams {
   tipY: number;
   /** Elevasi stik (rad), 0 = mendatar. */
   elevation: number;
-  /** Jenis stik; default 'standard'. Jump cue: lebih ringan, tip keras → bola lebih mudah melompat. */
-  cue?: CueType;
+  /** Id stik dari katalog (blender/specs.json → cues); default 'local'.
+   *  Nilai lama 'standard' = 'local'. Jump cue: lebih ringan, tip keras → bola lebih mudah melompat. */
+  cue?: string;
 }
 
-export type CueType = 'standard' | 'jump';
+/** Kategori stik di menu pilihan. */
+export type CueCategory = 'play' | 'jump-break';
+
+/** Satu stik di katalog: parameter fisik + model. */
+export interface CueSpec {
+  id: string;
+  name: string;
+  category: CueCategory;
+  /** nama objek di cue.glb */
+  model: string;
+  /** panjang (m) */
+  length: number;
+  /** rating low deflection 1..10 (makin tinggi makin kecil squirt saat english) */
+  ldRating: number;
+  /** offset tip (pecahan R) di atas mana pukulan miscue */
+  miscueLimit: number;
+  mass: number;
+  tipRestitution: number;
+  /** restitusi slate khusus (jump cue); default physics.jumpRestitution */
+  slateRestitution?: number;
+  note: string;
+}
 
 export type BallMotion =
   | 'stationary'

@@ -3,8 +3,13 @@ import {
   BALL_RADIUS as R,
   CUE_MAX_SPEED,
   CUE_MIN_SPEED,
+  CUES,
+  DEFAULT_CUE_ID,
   DEFAULT_PARAMS,
+  JUMP_CUE_ID,
   TABLE_LENGTH,
+  cueParams,
+  cueSpec,
   jumpLiftSpeed,
   squirtAngle,
 } from '@billiards/physics';
@@ -18,7 +23,7 @@ import {
   resolvePushOut,
 } from '@billiards/rules';
 import type {
-  CueType,
+  CueSpec,
   GameState,
   MatchOptions,
   ShotParams,
@@ -80,6 +85,16 @@ const AUTO_FOLLOW_MAX = 0.45;
 const AIM_SMOOTH = 28;
 const wrapAngle = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const PLAY_CUE_KEY = 'billiards.playCue';
+function loadPlayCue(): string {
+  try {
+    const id = localStorage.getItem(PLAY_CUE_KEY);
+    if (id && CUES.some((c) => c.id === id && c.category === 'play')) return id;
+  } catch {
+    /* storage tidak tersedia */
+  }
+  return DEFAULT_CUE_ID;
+}
 
 /** Cue ball benar-benar terbang (≥ 5 mm) sebelum kontak pertamanya dengan bola lain. */
 function airborneBeforeContact(res: ShotResult): boolean {
@@ -110,8 +125,10 @@ export class Game {
   tipX = 0;
   tipY = 0;
   elevation = 0;
-  /** stik yang dipakai: jump cue (pendek, ringan) atau stik biasa */
-  cueType: CueType = 'standard';
+  /** stik play pilihan pemain (diingat antar giliran & sesi) */
+  playCue = loadPlayCue();
+  /** stik yang sedang dipakai (id katalog) */
+  cueId = this.playCue;
   private elevBeforeJump = 0;
   private previewKey = '';
   private previewBusy = false;
@@ -154,7 +171,8 @@ export class Game {
   ) {
     this.rig = new CameraRig(world.camera, world.assets.cameras, world.assets.manifest);
     this.ballViews = new BallViews(world.balls);
-    this.cueView = new CueView(world.cue);
+    this.cueView = new CueView(world.cues);
+    this.cueView.setCue(cueSpec(this.cueId));
     this.guide.mode = settings.guide;
     world.scene.add(this.guide.group);
     this.jumpPreview = new JumpPreview();
@@ -202,7 +220,7 @@ export class Game {
     this.tipY = 0;
     this.elevation = 0;
     this.railPriority = 'tip';
-    this.setCueType('standard');
+    this.setCue(this.playCue);
     this.autoAim();
     this.rig.endShot();
     const changed = m.currentPlayer !== this.lastTurnPlayer || m.phase === 'break';
@@ -240,7 +258,7 @@ export class Game {
   }
   private applyTip(x: number, y: number): void {
     const d = Math.hypot(x, y);
-    const lim = this.cueType === 'jump' ? JUMP_TIP_LIMIT : TIP_LIMIT;
+    const lim = this.isJumpCue ? JUMP_TIP_LIMIT : TIP_LIMIT;
     if (d > lim) {
       x *= lim / d;
       y *= lim / d;
@@ -257,7 +275,7 @@ export class Game {
   /** Elevasi absolut (widget elevasi di HUD). */
   setElevation(e: number): void {
     if (this.mode !== 'aim' || this.powerActive) return;
-    const lo = this.cueType === 'jump' ? JUMP_MIN_ELEV : MIN_ELEV;
+    const lo = this.isJumpCue ? JUMP_MIN_ELEV : MIN_ELEV;
     this.elevation = Math.min(MAX_ELEV, Math.max(lo, e));
     this.railPriority = 'elev';
     this.emit('change', undefined);
@@ -265,34 +283,66 @@ export class Game {
   /** Level power minimum (1,0–5,0) agar bola terangkat dengan jump cue; null = tidak mungkin. */
   jumpLiftLevel(): number | null {
     const st = this.stroke();
-    const v = jumpLiftSpeed(st.elevation, st.tipX, st.tipY, DEFAULT_PARAMS);
+    const v = jumpLiftSpeed(st.elevation, st.tipX, st.tipY, DEFAULT_PARAMS, this.cueId);
     if (!Number.isFinite(v) || v > CUE_MAX_SPEED) return null;
     // kebalikan powerSpeed(): v = max · (level / 5)^1,8
     return Math.max(POWER_MIN, POWER_MAX * Math.pow(v / CUE_MAX_SPEED, 1 / 1.8));
   }
-  /** J: ganti stik biasa ↔ jump cue. Jump cue langsung menaikkan elevasi ke sudut jump. */
+  /** Spesifikasi stik yang sedang dipakai. */
+  get cue(): CueSpec {
+    return cueSpec(this.cueId);
+  }
+  /** Stik kategori jump-break: elevasi jump, prediksi lompatan. */
+  get isJumpCue(): boolean {
+    return this.cue.category === 'jump-break';
+  }
+  /** Batas miscue efektif stik aktif (pecahan R). */
+  get miscueLimit(): number {
+    return cueParams(this.cueId, DEFAULT_PARAMS).miscueLimit;
+  }
+  /** Stik boleh diganti: saat membidik, sebelum power dikunci / stik ditarik. */
+  get canChangeCue(): boolean {
+    return this.mode === 'aim' && !this.powerActive && this.pull <= 0.002;
+  }
+  /** J: ganti stik play ↔ jump cue. */
   toggleJumpCue(): void {
-    if (this.mode !== 'aim' || this.powerActive || this.pull > 0.002) return;
-    if (this.cueType === 'standard') {
+    this.selectCue(this.isJumpCue ? this.playCue : JUMP_CUE_ID);
+  }
+  /** Pilih stik dari menu. Stik play diingat; jump cue langsung menaikkan elevasi ke sudut jump. */
+  selectCue(id: string): void {
+    if (!this.canChangeCue) return;
+    const next = cueSpec(id);
+    if (next.id === this.cueId) return;
+    const wasJump = this.isJumpCue;
+    const toJump = next.category === 'jump-break';
+    if (!toJump) {
+      this.playCue = next.id;
+      try {
+        localStorage.setItem(PLAY_CUE_KEY, next.id);
+      } catch {
+        /* storage tidak tersedia */
+      }
+    }
+    if (toJump && !wasJump) {
       this.elevBeforeJump = this.elevation;
       this.elevation = Math.max(this.stroke().elevation, JUMP_ELEV);
       this.railPriority = 'elev';
       // titik pukul ke tengah: english besar pada elevasi tinggi mudah miscue
       this.tipX = 0;
       this.tipY = 0;
-      this.setCueType('jump');
-    } else {
+    } else if (!toJump && wasJump) {
       this.elevation = this.elevBeforeJump;
       this.railPriority = 'tip';
-      this.setCueType('standard');
     }
+    this.setCue(next.id);
+    this.applyTip(this.tipX, this.tipY);
     this.emit('change', undefined);
   }
-  private setCueType(t: CueType): void {
-    this.cueType = t;
-    this.cueView.setJump(t === 'jump');
+  private setCue(id: string): void {
+    this.cueId = cueSpec(id).id;
+    this.cueView.setCue(this.cue);
     this.previewKey = '';
-    if (t === 'standard') this.jumpPreview.clear();
+    if (!this.isJumpCue) this.jumpPreview.clear();
   }
   setPull(p: number): void {
     if (this.mode !== 'aim') return;
@@ -404,7 +454,7 @@ export class Game {
       tipY: st.tipY,
       elevation: st.elevation,
     };
-    if (this.cueType === 'jump') shot.cue = 'jump';
+    shot.cue = this.cueId;
     this.pendingShot = shot;
     this.pending = null;
     this.shotIsBreak = m.phase === 'break';
@@ -417,7 +467,7 @@ export class Game {
     void this.sim.simulate(before, shot).then(({ result, ms }) => {
       this.lastSimMs = ms;
       this.pending = result;
-      this.last = { before, result, isBreak: this.shotIsBreak, shooter, jump: shot.cue === 'jump' };
+      this.last = { before, result, isBreak: this.shotIsBreak, shooter, jump: cueSpec(shot.cue).category === 'jump-break' };
     });
     this.emit('change', undefined);
   }
@@ -473,7 +523,7 @@ export class Game {
     this.followT = 0;
     this.followMin = Infinity;
     this.ballViews.resetPlayback();
-    this.rig.startShot(this.context(), this.shotIsBreak, this.pendingShot!.cue === 'jump');
+    this.rig.startShot(this.context(), this.shotIsBreak, cueSpec(this.pendingShot!.cue).category === 'jump-break');
     const first = res.events[0];
     this.emit('shot', { isBreak: this.shotIsBreak, speed: this.pendingShot!.speed, miscue: first?.type === 'miscue' });
     this.emit('change', undefined);
@@ -483,7 +533,7 @@ export class Game {
     const m = this.match!;
     const res = this.result!;
     const prevPlayer = m.currentPlayer;
-    const jumpOk = this.pendingShot?.cue === 'jump' && airborneBeforeContact(res);
+    const jumpOk = !!this.pendingShot && cueSpec(this.pendingShot.cue).category === 'jump-break' && airborneBeforeContact(res);
     const next = applyShot(m, res, this.pushOutArmed);
     this.match = next;
     this.result = null;
@@ -546,8 +596,8 @@ export class Game {
         const st = this.stroke();
         this.cueView.setPose({ x: c.x, y: c.y, dir: this.aimView, elevation: st.elevation, tipX: st.tipX, tipY: st.tipY, gap: 0.014 + this.pull });
         // garis bidik mengikuti arah lari cue ball yang sebenarnya (termasuk squirt english)
-        const jump = this.cueType === 'jump';
-        this.guide.update(m.table, wrapAngle(this.aimView + squirtAngle(st.tipX, st.tipY, DEFAULT_PARAMS)), !this.rig.cinematic && !jump);
+        const jump = this.isJumpCue;
+        this.guide.update(m.table, wrapAngle(this.aimView + squirtAngle(st.tipX, st.tipY, DEFAULT_PARAMS, this.cueId)), !this.rig.cinematic && !jump);
         if (jump) this.updateJumpPreview(dt, st);
       } else if (this.mode === 'stroke') {
         this.jumpPreview.group.visible = false;
@@ -614,10 +664,10 @@ export class Game {
       tipX: st.tipX,
       tipY: st.tipY,
       elevation: st.elevation,
-      cue: 'jump',
+      cue: this.cueId,
     };
     const c = this.cueBall;
-    const key = [shot.dir, shot.speed, shot.tipX, shot.tipY, shot.elevation, c.x, c.y].map((v) => v.toFixed(4)).join(',');
+    const key = [shot.dir, shot.speed, shot.tipX, shot.tipY, shot.elevation, c.x, c.y].map((v) => v.toFixed(4)).join(',') + shot.cue;
     if (key === this.previewKey) return;
     this.previewWait += dt;
     if (this.previewBusy || this.previewWait < PREVIEW_DEBOUNCE) return;
@@ -628,7 +678,7 @@ export class Game {
     void this.previewSim.simulate(table, shot, { maxTime: 6 }).then(({ result }) => {
       this.previewBusy = false;
       // buang hasil basi (pukulan sudah dilepas / stik diganti / meja berubah)
-      if (this.mode !== 'aim' || this.cueType !== 'jump' || this.match !== m) return;
+      if (this.mode !== 'aim' || this.cueId !== shot.cue || this.match !== m) return;
       this.previewKey = key;
       this.jumpPreview.show(result, target);
       this.emit('change', undefined);

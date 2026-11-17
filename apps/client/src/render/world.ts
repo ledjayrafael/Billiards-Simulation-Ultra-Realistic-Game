@@ -59,7 +59,7 @@ export class World {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(40, 1, 0.03, 40);
   readonly balls: THREE.Mesh[];
-  readonly cue: THREE.Object3D;
+  readonly cues: Record<string, THREE.Object3D>;
   readonly spots: THREE.SpotLight[] = [];
   /** Objek yang disembunyikan saat kamera berada di atasnya. */
   private lampObjs: THREE.Object3D[] = [];
@@ -165,15 +165,17 @@ export class World {
       for (const m of materialsOf(b)) this.patchMaterial(m, 1);
       this.scene.add(b);
     }
-    this.cue = assets.cue;
-    this.cue.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      mesh.receiveShadow = false;
-      for (const m of materialsOf(mesh)) this.patchMaterial(m, 1);
-    });
-    this.scene.add(this.cue);
+    this.cues = assets.cues;
+    for (const cue of Object.values(this.cues)) {
+      cue.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = false;
+        for (const m of materialsOf(mesh)) this.patchMaterial(m, 1);
+      });
+      this.scene.add(cue);
+    }
 
     // ── lampu meja (cahaya langsung real-time) ──
     for (const s of manifest.spots) {

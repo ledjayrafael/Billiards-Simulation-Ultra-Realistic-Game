@@ -62,6 +62,20 @@ canvas#view { position: fixed; inset: 0; width: 100vw; height: 100vh; display: b
 /* jump cue: area titik pukul yang diizinkan (radius 0,3 R) */
 .spin .ball .lim { display: none; position: absolute; left: 35%; top: 35%; width: 30%; height: 30%; border-radius: 50%; border: 1.5px solid rgba(201, 164, 92, 0.9); background: rgba(201, 164, 92, 0.12); pointer-events: none; }
 .spin.jump .ball .lim { display: block; }
+.spin .ball .mis { position: absolute; border-radius: 50%; border: 1.5px dashed rgba(226, 87, 76, 0.75); pointer-events: none; }
+.status .cuename { font-size: 12px; color: var(--muted); }
+.cuemenu { position: absolute; right: 22px; bottom: 262px; width: 300px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
+.cuemenu[hidden] { display: none; }
+.cuemenu .head { font: 600 13px var(--sans); display: flex; justify-content: space-between; align-items: center; }
+.cuemenu .grp { margin-top: 6px; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.cuemenu .item { display: grid; gap: 4px; text-align: left; padding: 9px 11px; }
+.cuemenu .item.active { border-color: var(--brass); }
+.cuemenu .item .nm { font-weight: 600; }
+.cuemenu .item .nm em { font: 500 10px var(--sans); font-style: normal; color: var(--brass); margin-left: 4px; }
+.cuemenu .item .ld { display: flex; align-items: center; gap: 8px; font: 600 11px var(--sans); color: var(--ivory); font-variant-numeric: tabular-nums; }
+.cuemenu .item .bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.cuemenu .item .bar i { display: block; height: 100%; background: linear-gradient(90deg, #c9a45c, #6fc48a); }
+.cuemenu .item .meta { font: 400 11px var(--sans); color: var(--muted); }
 .spin small { color: var(--muted); font-size: 11px; text-align: center; font-variant-numeric: tabular-nums; }
 .elev { cursor: ns-resize; touch-action: none; user-select: none; display: flex; align-items: center; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .elev .arc { width: 44px; height: 24px; position: relative; overflow: hidden; }

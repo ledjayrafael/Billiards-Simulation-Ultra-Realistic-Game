@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { BALL_RADIUS as R, CUE_LENGTH, JUMP_CUE_LENGTH } from '@billiards/physics';
+import { BALL_RADIUS as R, CUE_LENGTH } from '@billiards/physics';
+import type { CueSpec } from '@billiards/shared';
 import { toThree } from './coords';
 
 const X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -44,17 +45,24 @@ export interface CuePose {
   gap: number;
 }
 
-/** Stik 3D: tip di origin model, memanjang ke −X. */
+/** Stik 3D: tip di origin model, memanjang ke −X. Beberapa model (satu per stik), satu yang tampil. */
 export class CueView {
   /** Pivot di ujung tip. Node glTF stik sendiri tidak disentuh: kuantisasi meshopt
    *  menyimpan offset/skala dekuantisasi di transform node itu, jadi menimpanya menggeser stik. */
   private obj: THREE.Object3D;
+  private models: Record<string, THREE.Object3D>;
 
-  constructor(model: THREE.Object3D) {
+  constructor(models: Record<string, THREE.Object3D>) {
     this.obj = new THREE.Group();
     this.obj.name = 'CuePivot';
-    model.parent?.add(this.obj);
-    this.obj.add(model);
+    this.models = models;
+    const first = Object.values(models)[0];
+    first?.parent?.add(this.obj);
+    for (const m of Object.values(models)) {
+      this.obj.add(m);
+      m.visible = false;
+    }
+    if (first) first.visible = true;
     this.obj.visible = false;
   }
 
@@ -65,9 +73,12 @@ export class CueView {
     return this.obj.visible;
   }
 
-  /** Jump cue: stik yang sama dipendekkan dari arah butt (pivot di tip, model memanjang ke −X). */
-  setJump(on: boolean): void {
-    this.obj.scale.x = on ? JUMP_CUE_LENGTH / CUE_LENGTH : 1;
+  /** Tampilkan model stik `spec.model`; stik yang lebih pendek dari modelnya (jump cue)
+   *  dipendekkan dari arah butt (pivot di tip, model memanjang ke −X). */
+  setCue(spec: CueSpec): void {
+    const model = this.models[spec.model] ?? Object.values(this.models)[0];
+    for (const m of Object.values(this.models)) m.visible = m === model;
+    this.obj.scale.x = spec.length / CUE_LENGTH;
   }
 
   /** Jarak titik (Three) ke ujung tip. */

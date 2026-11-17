@@ -91,6 +91,10 @@ export class Controls {
   private onDown(e: MouseEvent): void {
     const g = this.game;
     if (this.hud.sheetOpen) return;
+    if (this.hud.cueMenuOpen) {
+      this.hud.toggleCueMenu(false);
+      return;
+    }
     if (g.rig.cinematic) {
       g.rig.stopCinematic();
       return;
@@ -133,7 +137,7 @@ export class Controls {
 
   private onMove(e: MouseEvent): void {
     const g = this.game;
-    if (this.hud.sheetOpen) return;
+    if (this.hud.sheetOpen || this.hud.cueMenuOpen) return;
     const sens = this.settings.sensitivity;
     if (this.draggingCue) {
       const p = g.pickTable(...this.ndc(e));
@@ -237,6 +241,10 @@ export class Controls {
       g.cancelPowerBar();
       return;
     }
+    if (e.code === 'Escape' && this.hud.cueMenuOpen) {
+      this.hud.toggleCueMenu(false);
+      return;
+    }
     if (e.code === 'Escape') {
       if (this.softLock) {
         this.softLock = false;
@@ -272,6 +280,10 @@ export class Controls {
         break;
       case 'KeyJ':
         g.toggleJumpCue();
+        break;
+      case 'KeyK':
+        if (!this.hud.cueMenuOpen) this.release();
+        this.hud.toggleCueMenu();
         break;
     }
   }

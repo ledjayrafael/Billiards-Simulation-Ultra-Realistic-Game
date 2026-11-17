@@ -40,7 +40,7 @@ def build_full_scene(with_balls=True):
         random.seed(3)
         for b in balls:
             b.rotation_euler = (random.uniform(-0.5, 0.5), random.uniform(-0.6, 0.6), random.uniform(1.0, 2.2))
-        cue = build_cue.build()[0]
+        cue = build_cue.build_local()
         cue.location = (pos[0][0] - R - 0.03, pos[0][1], R + 0.004)
         cue.rotation_euler = (0, math.radians(4.5), 0)
     return dict(table=table, room=room, lights=lights, balls=balls, cue=cue)

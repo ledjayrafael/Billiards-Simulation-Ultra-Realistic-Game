@@ -29,17 +29,48 @@
   "cue": {
     "length": 1.47,
     "tipDiameter": 0.01275,
-    "mass": 0.54,
-    "tipRestitution": 0.75,
-    "miscueLimit": 0.5,
-    "squirtMaxDeg": 2.0,
     "minSpeed": 0.3,
-    "maxSpeed": 9.0,
-    "jumpLength": 1.02,
-    "jumpMass": 0.3,
-    "jumpTipRestitution": 0.85,
-    "jumpSlateRestitution": 0.4
+    "maxSpeed": 9.0
   },
+  "cues": [
+    {
+      "id": "local",
+      "name": "Stik Lokal",
+      "category": "play",
+      "model": "Cue_local",
+      "length": 1.47,
+      "ldRating": 3.0,
+      "miscueLimit": 0.45,
+      "mass": 0.54,
+      "tipRestitution": 0.75,
+      "note": "stik standar, simpangan besar saat efek"
+    },
+    {
+      "id": "ikon45",
+      "name": "Predator Ikon4 5 - Cue Play",
+      "category": "play",
+      "model": "Cue_ikon45",
+      "length": 1.47,
+      "ldRating": 9.0,
+      "miscueLimit": 0.55,
+      "mass": 0.55,
+      "tipRestitution": 0.78,
+      "note": "shaft kayu premium low deflection, cocok untuk efek"
+    },
+    {
+      "id": "jump",
+      "name": "Jump Break",
+      "category": "jump-break",
+      "model": "Cue_local",
+      "length": 1.02,
+      "ldRating": 4.0,
+      "miscueLimit": 0.5,
+      "mass": 0.3,
+      "tipRestitution": 0.85,
+      "slateRestitution": 0.4,
+      "note": "pendek & ringan, tip phenolic untuk lompatan"
+    }
+  ],
   "physics": {
     "gravity": 9.81,
     "muSlide": 0.2,

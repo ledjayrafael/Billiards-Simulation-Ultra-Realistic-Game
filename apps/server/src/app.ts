@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { simulate } from '@billiards/physics';
+import { CUES, simulate } from '@billiards/physics';
 import type { ShotParams, TableState } from '@billiards/shared';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -18,6 +18,7 @@ interface SimulateBody {
 function validShot(s: unknown): s is ShotParams {
   if (typeof s !== 'object' || s === null) return false;
   const o = s as Record<string, unknown>;
+  if (o.cue !== undefined && !(typeof o.cue === 'string' && (o.cue === 'standard' || CUES.some((c) => c.id === o.cue)))) return false;
   return ['dir', 'speed', 'tipX', 'tipY', 'elevation'].every(
     (k) => typeof o[k] === 'number' && Number.isFinite(o[k]),
   );

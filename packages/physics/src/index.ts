@@ -3,4 +3,4 @@ export { simulate, getGeometry, type SimOptions } from './simulate';
 export { buildTable, type TableGeometry, type Segment, type Arc, type Pocket } from './table';
 export { makeBall } from './ball';
 export { firstDownCrossing, realRootsInInterval } from './poly';
-export { squirtAngle, jumpLiftSpeed } from './cue';
+export { squirtAngle, jumpLiftSpeed, cueParams, type CueParams } from './cue';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rackNineBall } from '@billiards/rules';
 import type { TableState } from '@billiards/shared';
-import { firstDownCrossing, jumpLiftSpeed, realRootsInInterval, simulate, makeBall } from '../src';
+import { cueParams, firstDownCrossing, jumpLiftSpeed, realRootsInInterval, simulate, makeBall, squirtAngle } from '../src';
 import { collideBalls } from '../src/collide/ballBall';
 import { collideCushion } from '../src/collide/cushion';
 import { toBody, fromBody } from '../src/ball';
@@ -208,13 +208,13 @@ describe('8. throw', () => {
 });
 
 describe('9. squirt', () => {
-  it('english samping maksimum → defleksi 1–3° berlawanan arah english', () => {
-    const res = simulate(table([0, -1, 0]), shot({ speed: 2.5, tipX: 0.5 }));
+  it('english samping maksimum (stik lokal) → defleksi 1–3° berlawanan arah english', () => {
+    const res = simulate(table([0, -1, 0]), shot({ speed: 2.5, tipX: P.miscueLimit }));
     const h = heading(res, 0, 0, 0.03) / DEG;
     expect(h).toBeGreaterThan(1);
     expect(h).toBeLessThan(3);
   });
-  it('miscue di luar batas 0.5R', () => {
+  it('miscue di luar batas miscue stik lokal', () => {
     const res = simulate(table([0, -1, 0]), shot({ speed: 3, tipX: 0.45, tipY: 0.4 }));
     expect(res.events[0].type).toBe('miscue');
   });
@@ -371,6 +371,30 @@ describe('pocket & lain-lain', () => {
       simulate(table([0, -0.6, 0]), { ...shot({ speed, elevation: e }), cue: 'jump' }).events.some((x) => x.type === 'slate');
     expect(lifted(v * 0.97)).toBe(false);
     expect(lifted(v * 1.03)).toBe(true);
+  });
+  it('stik low deflection: squirt Ikon4 5 jauh lebih kecil dari stik lokal', () => {
+    const run = (cue: string): number => {
+      const res = simulate(table([0, -0.8, 0]), { ...shot({ speed: 2, tipX: 0.4 }), cue });
+      return heading(res, 0, 0, 0.02);
+    };
+    const local = run('local');
+    const ikon = run('ikon45');
+    expect(local).toBeGreaterThan(0); // english kanan → menyimpang ke kiri (CCW)
+    expect(ikon).toBeGreaterThan(0);
+    expect(ikon / local).toBeLessThan(0.45);
+    expect(squirtAngle(0.4, 0, P, 'ikon45')).toBeCloseTo(ikon, 6);
+  });
+  it('batas miscue per stik: offset 0.5 miscue untuk lokal, aman untuk Ikon4 5', () => {
+    const miscue = (cue: string): boolean =>
+      simulate(table([0, -0.8, 0]), { ...shot({ speed: 2, tipX: 0.5 }), cue }).events.some((e) => e.type === 'miscue');
+    expect(miscue('local')).toBe(true);
+    expect(miscue('ikon45')).toBe(false);
+  });
+  it("id lama 'standard' = stik lokal", () => {
+    const a = simulate(table([0, -0.8, 0]), { ...shot({ speed: 2, tipX: 0.3 }), cue: 'standard' });
+    const b = simulate(table([0, -0.8, 0]), shot({ speed: 2, tipX: 0.3 }));
+    expect(ball(a, 0).pos).toEqual(ball(b, 0).pos);
+    expect(cueParams('standard', P)).toEqual(cueParams(undefined, P));
   });
   it('massé: elevasi + english melengkungkan lintasan', () => {
     const res = simulate(table([0, -0.8, 0]), shot({ speed: 3, elevation: 50 * DEG, tipX: 0.4 }));

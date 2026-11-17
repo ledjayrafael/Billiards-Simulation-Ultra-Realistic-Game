@@ -19,7 +19,8 @@ export interface SceneManifest {
 export interface Assets {
   table: THREE.Group;
   balls: THREE.Mesh[];
-  cue: THREE.Object3D;
+  /** model stik per nama objek di cue.glb (Cue_local, Cue_ikon45, …) */
+  cues: Record<string, THREE.Object3D>;
   room: THREE.Group;
   cameras: GLTF;
   envReflect: THREE.DataTexture;
@@ -74,7 +75,7 @@ export async function loadAssets(onProgress: (fraction: number, label: string) =
   return {
     table: table.scene,
     balls: ballMeshes,
-    cue: cue.scene.getObjectByName('Cue') ?? cue.scene,
+    cues: Object.fromEntries(cue.scene.children.filter((o) => o.name.startsWith('Cue_')).map((o) => [o.name, o])),
     room: room.scene,
     cameras,
     envReflect,
