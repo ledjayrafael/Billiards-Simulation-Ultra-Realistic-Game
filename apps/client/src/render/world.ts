@@ -12,7 +12,7 @@ import {
   VignetteEffect,
 } from 'postprocessing';
 import { N8AOPostPass } from 'n8ao';
-import type { Assets } from './assets';
+import type { ArenaAssets, Assets, SceneManifest } from './assets';
 import { toThree } from './coords';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
@@ -60,7 +60,9 @@ export class World {
   readonly camera = new THREE.PerspectiveCamera(40, 1, 0.03, 40);
   readonly balls: THREE.Mesh[];
   readonly cues: Record<string, THREE.Object3D>;
-  readonly spots: THREE.SpotLight[] = [];
+  spots: THREE.SpotLight[] = [];
+  /** arena aktif (ruangan, meja, IBL, lightmap) */
+  arena!: ArenaAssets;
   /** Objek yang disembunyikan saat kamera berada di atasnya. */
   private lampObjs: THREE.Object3D[] = [];
   private ceilingObj: THREE.Object3D | null = null;
@@ -68,14 +70,18 @@ export class World {
   private dof: DepthOfFieldEffect | null = null;
   private dofPass: EffectPass | null = null;
   private quality: Quality = 'high';
-  private envDiffuseTex: THREE.Texture;
-  private envReflectTex: THREE.Texture;
+  /** dibagi oleh semua material ter-patch → ganti arena cukup mengubah .value */
+  private envDiffuseUniform: { value: THREE.Texture | null } = { value: null };
+  private envReflectTex: THREE.Texture | null = null;
+  private patched = new Set<THREE.MeshStandardMaterial>();
+  private pmrem: THREE.PMREMGenerator;
   private width = 1;
   private height = 1;
 
   constructor(
     canvas: HTMLCanvasElement,
     readonly assets: Assets,
+    arena: ArenaAssets,
     quality: Quality,
   ) {
     this.renderer = new THREE.WebGLRenderer({
@@ -91,71 +97,8 @@ export class World {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.info.autoReset = false;
-
-    // environment (PMREM)
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    assets.envReflect.mapping = THREE.EquirectangularReflectionMapping;
-    assets.envDiffuse.mapping = THREE.EquirectangularReflectionMapping;
-    const envReflect = pmrem.fromEquirectangular(assets.envReflect).texture;
-    this.envDiffuseTex = pmrem.fromEquirectangular(assets.envDiffuse).texture;
-    pmrem.dispose();
-    this.envReflectTex = envReflect;
-    this.scene.environment = envReflect;
+    this.pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.background = new THREE.Color(0x020203);
-
-    // ── objek ──
-    const { table, room, manifest } = assets;
-    this.scene.add(room, table);
-    const lightmapped = new Set<THREE.Object3D>();
-    for (const name of manifest.lightmap.objects) {
-      const o = room.getObjectByName(name);
-      o?.traverse((c) => lightmapped.add(c));
-    }
-    room.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.receiveShadow = true;
-      mesh.castShadow = false;
-      const isLm = lightmapped.has(mesh) && !!mesh.geometry.attributes.uv1;
-      for (const m of materialsOf(mesh)) {
-        if (isLm) {
-          m.lightMap = assets.lightmap;
-          m.lightMapIntensity = manifest.lightmap.intensity;
-          m.envMapIntensity = 0.35;
-        }
-        this.patchMaterial(m, isLm ? 0 : 1);
-      }
-    });
-    for (const n of ['Lamp', 'Lamp_Glow']) {
-      const o = room.getObjectByName(n);
-      if (o) this.lampObjs.push(o);
-    }
-    this.ceilingObj = room.getObjectByName('Room_Ceiling') ?? null;
-    room.getObjectByName('Chalk')?.traverse((o) => {
-      o.castShadow = true;
-    });
-    table.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = !/Diamonds|Pocket_Cups/.test(mesh.name) && !/Diamonds|Pocket_Cups/.test(mesh.parent?.name ?? '');
-      mesh.receiveShadow = true;
-      for (const m of materialsOf(mesh)) {
-        // sheen bawaan eksportir (putih, penuh) membuat kain tampak pucat → redam & warnai
-        const pm = m as THREE.MeshPhysicalMaterial;
-        // kantong pocket: probe refleksi (di tengah meja) tidak berlaku di dalam lubang
-        if (m.name === 'PocketDark') m.envMapIntensity = 0;
-        if (m.name === 'PocketLeather') m.envMapIntensity = 0.25;
-        if (m.name === 'Cloth' && pm.isMeshPhysicalMaterial) {
-          pm.sheen = 0.18;
-          pm.sheenColor.setRGB(0.25, 0.45, 0.7);
-          pm.sheenRoughness = 0.6;
-        }
-        // bodi di bawah meja: probe (di atas kain) tidak mewakili pencahayaan di sana
-        const under = m.name === 'BodyLacquer';
-        if (under) m.envMapIntensity = 0.12;
-        this.patchMaterial(m, under ? 0.25 : 1);
-      }
-    });
 
     this.balls = assets.balls;
     for (const b of this.balls) {
@@ -176,6 +119,102 @@ export class World {
       });
       this.scene.add(cue);
     }
+    this.applyArena(arena);
+    this.setQuality(quality);
+  }
+
+  get manifest(): SceneManifest {
+    return this.arena.manifest;
+  }
+
+  /** Ganti arena (ruangan, meja, IBL, lampu). Panggil warmUp() sesudahnya untuk kompilasi shader. */
+  setArena(arena: ArenaAssets): void {
+    if (arena === this.arena) return;
+    this.applyArena(arena);
+    this.setQuality(this.quality);
+  }
+
+  private applyArena(arena: ArenaAssets): void {
+    const prev = this.arena;
+    if (prev) {
+      this.scene.remove(prev.room, prev.table);
+      for (const l of this.spots) {
+        this.scene.remove(l, l.target);
+        l.dispose();
+      }
+      this.spots = [];
+      this.envReflectTex?.dispose();
+      this.envDiffuseUniform.value?.dispose();
+    }
+    this.arena = arena;
+
+    // environment (PMREM)
+    this.envReflectTex = this.pmrem.fromEquirectangular(arena.envReflect).texture;
+    this.envDiffuseUniform.value = this.pmrem.fromEquirectangular(arena.envDiffuse).texture;
+    this.scene.environment = this.envReflectTex;
+    for (const m of this.patched) m.envMap = this.envReflectTex;
+
+    // ── objek ──
+    const { table, room, manifest } = arena;
+    this.scene.add(room, table);
+    const lightmapped = new Set<THREE.Object3D>();
+    for (const name of manifest.lightmap.objects) {
+      const o = room.getObjectByName(name);
+      o?.traverse((c) => lightmapped.add(c));
+    }
+    const roomEnv = arena.def.roomEnv ?? 1;
+    room.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      const isLm = lightmapped.has(mesh) && !!mesh.geometry.attributes.uv1;
+      for (const m of materialsOf(mesh)) {
+        if (isLm) {
+          m.lightMap = arena.lightmap;
+          m.lightMapIntensity = manifest.lightmap.intensity;
+          m.envMapIntensity = 0.35;
+        }
+        if (roomEnv !== 1 && m.metalness < 0.5) m.envMapIntensity = (isLm ? 0.35 : 1) * roomEnv;
+        this.patchMaterial(m, isLm ? 0 : 1);
+      }
+    });
+    this.lampObjs = [];
+    for (const n of ['Lamp', 'Lamp_Glow']) {
+      const o = room.getObjectByName(n);
+      if (o) this.lampObjs.push(o);
+    }
+    this.ceilingObj = room.getObjectByName('Room_Ceiling') ?? null;
+    room.getObjectByName('Chalk')?.traverse((o) => {
+      o.castShadow = true;
+    });
+    const cloth = arena.def.cloth;
+    const tableEnv = arena.def.tableEnv ?? 1;
+    table.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = !/Diamonds|Pocket_Cups/.test(mesh.name) && !/Diamonds|Pocket_Cups/.test(mesh.parent?.name ?? '');
+      mesh.receiveShadow = true;
+      for (const m of materialsOf(mesh)) {
+        // sheen bawaan eksportir (putih, penuh) membuat kain tampak pucat → redam & warnai
+        const pm = m as THREE.MeshPhysicalMaterial;
+        // kantong pocket: probe refleksi (di tengah meja) tidak berlaku di dalam lubang
+        if (m.name === 'Cloth') {
+          // meja pro: kain netral diwarnai sesuai arena (meja dipakai bersama → set ulang tiap ganti)
+          if (cloth) m.color.setRGB(cloth[0], cloth[1], cloth[2]);
+          if (pm.isMeshPhysicalMaterial) {
+            pm.sheen = 0.18;
+            if (cloth) pm.sheenColor.setRGB(cloth[0] * 0.6, cloth[1] * 0.6, cloth[2] * 0.6);
+            else pm.sheenColor.setRGB(0.25, 0.45, 0.7);
+            pm.sheenRoughness = 0.6;
+          }
+        }
+        // bodi di bawah meja: probe (di atas kain) tidak mewakili pencahayaan di sana
+        const under = m.name.startsWith('BodyLacquer');
+        m.envMapIntensity = (under ? 0.12 : m.name.startsWith('PocketDark') ? 0 : m.name.startsWith('PocketLeather') ? 0.25 : 1) * tableEnv;
+        this.patchMaterial(m, under ? 0.25 : 1);
+      }
+    });
 
     // ── lampu meja (cahaya langsung real-time) ──
     for (const s of manifest.spots) {
@@ -190,24 +229,26 @@ export class World {
       toThree(s.pos[0], s.pos[1], s.pos[2], light.position);
       toThree(s.pos[0], s.pos[1], 0, light.target.position);
       light.shadow.camera.near = 0.2;
-      light.shadow.camera.far = 3.2;
+      light.shadow.camera.far = Math.max(3.2, s.pos[2] + 2.4);
       light.shadow.bias = -0.0006;
       light.shadow.normalBias = 0.0025;
       light.shadow.radius = 3.5;
       this.scene.add(light, light.target);
       this.spots.push(light);
     }
-    this.setQuality(quality);
   }
 
   private patchMaterial(m: THREE.Material, iblDiffuseScale: number): void {
-    const tex = this.envDiffuseTex;
+    const uni = this.envDiffuseUniform;
     // envMap eksplisit: material.envMapIntensity hanya berlaku bila envMap diset per material
     // (untuk scene.environment three.js memakai scene.environmentIntensity).
     const std = m as THREE.MeshStandardMaterial;
-    if (std.isMeshStandardMaterial) std.envMap = this.envReflectTex;
+    if (std.isMeshStandardMaterial) {
+      std.envMap = this.envReflectTex;
+      this.patched.add(std);
+    }
     m.onBeforeCompile = (shader) => {
-      shader.uniforms.envMapDiffuse = { value: tex };
+      shader.uniforms.envMapDiffuse = uni;
       shader.uniforms.iblDiffuseScale = { value: iblDiffuseScale };
     };
     m.customProgramCacheKey = () => 'ibl-split';

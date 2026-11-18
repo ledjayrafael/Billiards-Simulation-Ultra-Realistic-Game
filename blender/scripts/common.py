@@ -219,7 +219,7 @@ def load_image(filename, colorspace="sRGB"):
 
 def make_material(name, color=(0.8, 0.8, 0.8), rough=0.5, metallic=0.0, diff=None, nor=None, rough_img=None,
                   tint=None, normal_strength=1.0, coat=0.0, coat_rough=0.03, sheen=0.0, sheen_rough=0.5,
-                  emission=None, emission_strength=0.0, uv_scale=None, ior=1.5):
+                  emission=None, emission_strength=0.0, uv_scale=None, ior=1.5, emission_img=None):
     """Material Principled yang kompatibel dengan eksportir glTF."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -267,6 +267,11 @@ def make_material(name, color=(0.8, 0.8, 0.8), rough=0.5, metallic=0.0, diff=Non
     if rough_img:
         t = tex(rough_img)
         nt.links.new(t.outputs["Color"], bsdf.inputs["Roughness"])
+    if emission_img is not None:
+        # emisi bertekstur (layar/papan LED); warna dasar gelap agar tidak terpengaruh cahaya
+        t = tex(emission_img)
+        nt.links.new(t.outputs["Color"], bsdf.inputs["Emission Color"])
+        bsdf.inputs["Emission Strength"].default_value = emission_strength
     if nor:
         t = tex(nor)
         nm = nt.nodes.new("ShaderNodeNormalMap")

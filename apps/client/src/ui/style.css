@@ -236,6 +236,19 @@ input[type='checkbox']:focus-visible, .tabs button:focus-visible { outline: 2px 
 .versus label:last-child { text-align: right; }
 .versus label:last-child input { text-align: right; }
 .versus b { font: italic 600 15px/1 var(--serif); color: var(--muted); width: 34px; height: 34px; margin-bottom: 3px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); }
+.arenas { display: grid; gap: 6px; margin-bottom: 14px; }
+.arenas small { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass); font-weight: 600; }
+.arena { --p: 0; position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px; text-align: left; padding: 9px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.035); }
+.arena i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--ac); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac) 22%, transparent), 0 0 12px color-mix(in srgb, var(--ac) 70%, transparent); opacity: 0.55; transition: opacity 0.2s; }
+.arena span { display: grid; gap: 1px; min-width: 0; }
+.arena b { font-weight: 600; font-size: 13px; color: var(--ivory); }
+.arena em { font-style: normal; font-weight: 400; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arena:hover { background: rgba(255, 255, 255, 0.07); }
+.arena.on { border-color: color-mix(in srgb, var(--ac) 70%, transparent); background: linear-gradient(90deg, color-mix(in srgb, var(--ac) 16%, transparent), rgba(255, 255, 255, 0.03) 70%); }
+.arena.on i { opacity: 1; }
+.arena.loading::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: calc(var(--p) * 100%); background: var(--ac); transition: width 0.15s; }
+.arena.loading { cursor: progress; }
+button:disabled { opacity: 0.55; cursor: progress; }
 .race { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); }
 .race span { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
 .race .stepper b { font-size: 26px; min-width: 34px; }

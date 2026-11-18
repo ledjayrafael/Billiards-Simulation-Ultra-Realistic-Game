@@ -16,9 +16,10 @@ from common import T  # noqa: E402
 CLOTH_TILE = 0.06  # meter per pengulangan tekstur kain
 WOOD_TILE = 0.9
 CLOTH_RGB = (0.045, 0.30, 0.54)  # biru petrol (sRGB)
+CLOTH_NEUTRAL = (0.62, 0.62, 0.62)  # meja pro: diwarnai per arena di client
 
 
-def cloth_textures():
+def cloth_textures(rgb=CLOTH_RGB, tag="cloth"):
     """Tekstur kain worsted prosedural: variasi serat halus + normal map tenunan twill."""
     n = 512
     rng = np.random.default_rng(9)
@@ -42,12 +43,19 @@ def cloth_textures():
     ln = np.sqrt(nx * nx + ny * ny + nz * nz)
     nor = np.stack([nx / ln * 0.5 + 0.5, ny / ln * 0.5 + 0.5, nz / ln * 0.5 + 0.5], axis=2)
     shade = 1.0 + 0.045 * weave + 0.05 * fiber + 0.035 * low
-    diff = np.clip(np.stack([CLOTH_RGB[i] * shade for i in range(3)], axis=2), 0, 1)
-    return C.save_image("cloth_diff", diff), C.save_image("cloth_nor", nor, "Non-Color")
+    diff = np.clip(np.stack([rgb[i] * shade for i in range(3)], axis=2), 0, 1)
+    return C.save_image(f"{tag}_diff", diff), C.save_image(f"{tag}_nor", nor, "Non-Color")
 
 
-def materials():
-    cd, cn = cloth_textures()
+def materials(style="classic", cloth_rgb=None):
+    if cloth_rgb is not None:
+        # hanya untuk bake arena: warna kain mendekati hasil akhir di client agar pantulan cahaya benar
+        cd, cn = cloth_textures(cloth_rgb, "cloth_bake")
+    elif style == "pro":
+        # kain netral (abu terang): warna akhir per arena diberikan client lewat material.color
+        cd, cn = cloth_textures(CLOTH_NEUTRAL, "cloth_neutral")
+    else:
+        cd, cn = cloth_textures()
     m = {}
     m["cloth"] = C.make_material("Cloth", rough=0.92, diff=cd, nor=cn, normal_strength=0.6, sheen=0.35, sheen_rough=0.45)
     wd = C.load_image("walnut_veneer_02_diff.jpg")
@@ -61,6 +69,12 @@ def materials():
     m["leather"] = C.make_material("PocketLeather", diff=ld, nor=ln, rough=0.55, tint=(0.07, 0.06, 0.055), uv_scale=(6, 6))
     m["metal"] = C.make_material("Brass", color=(0.78, 0.6, 0.3), rough=0.28, metallic=1.0)
     m["dark"] = C.make_material("PocketDark", color=(0.006, 0.006, 0.007), rough=0.9)
+    if style == "pro":
+        # meja turnamen: rail & bodi hitam satin, diamond putih, tanpa trim kuningan
+        m["wood"] = C.make_material("RailBlack", color=(0.01, 0.01, 0.012), rough=0.55, coat=0.12, coat_rough=0.3)
+        m["body"] = C.make_material("BodyLacquer", color=(0.014, 0.014, 0.016), rough=0.5, coat=0.15, coat_rough=0.3)
+        m["pearl"] = C.make_material("Pearl", color=(0.9, 0.9, 0.88), rough=0.3)
+        m["leather"] = C.make_material("PocketLeather", color=(0.02, 0.02, 0.022), rough=0.6)
     return m
 
 
@@ -182,13 +196,14 @@ def diamond_positions():
     return pts
 
 
-def build():
-    """Bangun meja di scene aktif. Mengembalikan list objek."""
+def build(style="classic", cloth_rgb=None):
+    """Bangun meja di scene aktif. style: "classic" (rail kayu) | "pro" (meja turnamen hitam). Mengembalikan list objek."""
     hl, hw = T["length"] / 2, T["width"] / 2
     cw, rw, zt = T["cushionWidth"], T["railWidth"], T["railHeight"]
     slate = T["slateThickness"]
     cushions, pockets = C.table_geometry()
-    M = materials()
+    M = materials(style, cloth_rgb)
+    pro = style == "pro"
     objs = []
 
     def cutters(radius_extra, seg=72):
@@ -220,7 +235,7 @@ def build():
     # 3. rail kayu
     hx, hy = hl + cw + rw, hw + cw + rw
     zb = -0.062
-    rail = C.prism("Table_Rail", C.rounded_rect(hx, hy, 0.085, 10), zb, zt)
+    rail = C.prism("Table_Rail", C.rounded_rect(hx, hy, 0.03 if pro else 0.085, 10), zb, zt)
     inner = C.prism("cut", rect(hl + cw, hw + cw), -1, 1)
     C.boolean(rail, inner)
     bpy.data.objects.remove(inner, do_unlink=True)
@@ -268,36 +283,58 @@ def build():
 
     # 6. bodi: apron, panel bawah, kaki
     body_parts = []
-    ap = C.prism("apron", C.rounded_rect(hx - 0.022, hy - 0.022, 0.07, 8), -0.235, zb)
-    cut_all(ap, cutters(0.008, 40))  # ruang untuk kantong pocket
-    C.bevel(ap, 0.006, 3, 50)
-    body_parts.append(ap)
-    floor_z = -T["surfaceHeight"]
-    for sx in (-1, 1):
-        # pedestal trapesium melintang
-        x0 = sx * 0.78
-        top_w, bot_w = hy - 0.12, hy - 0.26
-        th_top, th_bot = 0.11, 0.075
-        bm = bmesh.new()
-        vt = [bm.verts.new((x0 + dx, dy, -0.235)) for dx, dy in ((th_top, top_w), (-th_top, top_w), (-th_top, -top_w), (th_top, -top_w))]
-        vb = [bm.verts.new((x0 + dx, dy, floor_z + 0.045)) for dx, dy in ((th_bot, bot_w), (-th_bot, bot_w), (-th_bot, -bot_w), (th_bot, -bot_w))]
-        bm.faces.new(vt)
-        bm.faces.new(list(reversed(vb)))
-        for i in range(4):
-            j = (i + 1) % 4
-            bm.faces.new((vb[i], vb[j], vt[j], vt[i]))
-        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-        leg = C.obj_from_bmesh("leg", bm)
-        C.bevel(leg, 0.012, 3, 50)
-        body_parts.append(leg)
-        foot = C.prism("foot", C.rounded_rect(0.12, bot_w + 0.03, 0.03, 6), floor_z, floor_z + 0.045)
-        foot.location.x = x0
-        bpy.context.view_layer.update()
-        C.bevel(foot, 0.006, 2, 50)
-        body_parts.append(foot)
-    beam = C.prism("beam", rect(0.78, 0.045), floor_z + 0.2, floor_z + 0.32)
-    C.bevel(beam, 0.008, 2, 50)
-    body_parts.append(beam)
+    if pro:
+        # bodi kotak tebal + 4 kaki persegi (gaya meja turnamen)
+        floor_z = -T["surfaceHeight"]
+        ap = C.prism("apron", C.rounded_rect(hx - 0.012, hy - 0.012, 0.025, 4), -0.30, zb)
+        cut_all(ap, cutters(0.008, 40))
+        C.bevel(ap, 0.005, 2, 50)
+        body_parts.append(ap)
+        band = C.prism("band", C.rounded_rect(hx - 0.06, hy - 0.06, 0.02, 4), -0.36, -0.30)
+        body_parts.append(band)
+        lx, ly, ls = hx - 0.26, hy - 0.2, 0.085
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                leg = C.prism("leg", C.rounded_rect(ls, ls, 0.012, 3), floor_z + 0.02, -0.36)
+                leg.location = (sx * lx, sy * ly, 0)
+                bpy.context.view_layer.update()
+                C.bevel(leg, 0.004, 2, 50)
+                body_parts.append(leg)
+                foot = C.prism("foot", C.rounded_rect(ls + 0.01, ls + 0.01, 0.015, 3), floor_z, floor_z + 0.02)
+                foot.location = (sx * lx, sy * ly, 0)
+                bpy.context.view_layer.update()
+                body_parts.append(foot)
+    else:
+        ap = C.prism("apron", C.rounded_rect(hx - 0.022, hy - 0.022, 0.07, 8), -0.235, zb)
+        cut_all(ap, cutters(0.008, 40))  # ruang untuk kantong pocket
+        C.bevel(ap, 0.006, 3, 50)
+        body_parts.append(ap)
+        floor_z = -T["surfaceHeight"]
+        for sx in (-1, 1):
+            # pedestal trapesium melintang
+            x0 = sx * 0.78
+            top_w, bot_w = hy - 0.12, hy - 0.26
+            th_top, th_bot = 0.11, 0.075
+            bm = bmesh.new()
+            vt = [bm.verts.new((x0 + dx, dy, -0.235)) for dx, dy in ((th_top, top_w), (-th_top, top_w), (-th_top, -top_w), (th_top, -top_w))]
+            vb = [bm.verts.new((x0 + dx, dy, floor_z + 0.045)) for dx, dy in ((th_bot, bot_w), (-th_bot, bot_w), (-th_bot, -bot_w), (th_bot, -bot_w))]
+            bm.faces.new(vt)
+            bm.faces.new(list(reversed(vb)))
+            for i in range(4):
+                j = (i + 1) % 4
+                bm.faces.new((vb[i], vb[j], vt[j], vt[i]))
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+            leg = C.obj_from_bmesh("leg", bm)
+            C.bevel(leg, 0.012, 3, 50)
+            body_parts.append(leg)
+            foot = C.prism("foot", C.rounded_rect(0.12, bot_w + 0.03, 0.03, 6), floor_z, floor_z + 0.045)
+            foot.location.x = x0
+            bpy.context.view_layer.update()
+            C.bevel(foot, 0.006, 2, 50)
+            body_parts.append(foot)
+        beam = C.prism("beam", rect(0.78, 0.045), floor_z + 0.2, floor_z + 0.32)
+        C.bevel(beam, 0.008, 2, 50)
+        body_parts.append(beam)
     body = C.join(body_parts, "Table_Body")
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     C.shade_smooth(body, 40)
@@ -305,6 +342,8 @@ def build():
     C.assign(body, M["body"])
     objs.append(body)
 
+    if pro:
+        return objs
     # garis kuningan tipis di bawah rail
     trim = C.prism("Table_Trim", C.rounded_rect(hx - 0.016, hy - 0.016, 0.075, 8), zb - 0.006, zb + 0.001)
     cut_all(trim, cutters(0.008, 40))

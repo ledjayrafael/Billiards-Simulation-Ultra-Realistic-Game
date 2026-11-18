@@ -4,6 +4,7 @@ import type { CueCategory, CueSpec, MatchOptions } from '@billiards/shared';
 import type { Game } from '../game/game';
 import { POWER_MAX, POWER_MIN, powerSpeed } from '../game/power';
 import { saveSettings, type Settings } from '../game/settings';
+import { ARENAS, type ArenaId } from '../render/arenas';
 import { cueThumbnails } from '../render/cueThumbs';
 
 const BALL_COLORS = ['#f4f1e6', '#f2c12e', '#1f55b5', '#d12a20', '#5c2d91', '#f07a1c', '#1f8a4c', '#8a2424', '#1a1a1a', '#f2c12e'];
@@ -15,6 +16,8 @@ export interface HudApp {
   quitToMenu(): void;
   resume(): void;
   nextRack(): void;
+  /** muat & tampilkan arena; onProgress 0..1 */
+  selectArena(id: ArenaId, onProgress: (f: number) => void): Promise<void>;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
@@ -449,6 +452,13 @@ export class Hud {
       </nav>
       <div class="panes">
         <section data-pane="match">
+          <div class="arenas" role="radiogroup" aria-label="Arena">
+            <small>Arena</small>
+            ${ARENAS.map(
+              (a) =>
+                `<button class="arena ${a.id === this.settings.arena ? 'on' : ''}" data-arena="${a.id}" role="radio" aria-checked="${a.id === this.settings.arena}" style="--ac:${a.accent}"><i></i><span><b>${esc(a.name)}</b><em>${esc(a.desc)}</em></span></button>`,
+            ).join('')}
+          </div>
           <div class="versus">
             <label><small>Pemain 1</small><input type="text" maxlength="16" value="${esc(o.playerNames[0])}" data-p="0"></label>
             <b>VS</b>
@@ -476,7 +486,36 @@ export class Hud {
     }));
     card.querySelectorAll<HTMLInputElement>('[data-o]').forEach((i) => i.addEventListener('input', () => ((o as unknown as Record<string, boolean>)[i.dataset.o!] = i.checked)));
     this.bindSettings(card);
-    (card.querySelector('.go') as HTMLButtonElement).onclick = () => {
+    const go = card.querySelector('.go') as HTMLButtonElement;
+    const arenaBtns = [...card.querySelectorAll<HTMLButtonElement>('[data-arena]')];
+    let arenaBusy = false;
+    for (const b of arenaBtns) {
+      b.onclick = async () => {
+        const id = b.dataset.arena as ArenaId;
+        if (arenaBusy || id === this.settings.arena) return;
+        arenaBusy = true;
+        go.disabled = true;
+        b.classList.add('loading');
+        b.style.setProperty('--p', '0');
+        try {
+          await this.app.selectArena(id, (f) => b.style.setProperty('--p', String(f)));
+          for (const x of arenaBtns) {
+            const on = x === b;
+            x.classList.toggle('on', on);
+            x.setAttribute('aria-checked', String(on));
+          }
+        } catch (err) {
+          console.error(err);
+          this.toast('Gagal memuat arena');
+        } finally {
+          b.classList.remove('loading');
+          arenaBusy = false;
+          go.disabled = false;
+        }
+      };
+    }
+    go.onclick = () => {
+      if (arenaBusy) return;
       this.closeSheet();
       this.app.startMatch({ ...o, playerNames: [o.playerNames[0], o.playerNames[1]] });
     };

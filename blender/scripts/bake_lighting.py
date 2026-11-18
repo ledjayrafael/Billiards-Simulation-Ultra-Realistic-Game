@@ -55,7 +55,7 @@ def srgb_encode(x):
     return np.where(x <= 0.0031308, x * 12.92, 1.055 * np.power(np.maximum(x, 1e-9), 1 / 2.4) - 0.055)
 
 
-def bake_lightmap(room_objs, spots, out_dir, samples=384):
+def bake_lightmap(room_objs, spots, out_dir, samples=384, name="room_lightmap"):
     make_lightmap_uv(room_objs)
     img = bpy.data.images.new("lightmap_bake", LM_SIZE, LM_SIZE, alpha=False, float_buffer=True)
     img.colorspace_settings.name = "Non-Color"
@@ -80,7 +80,7 @@ def bake_lightmap(room_objs, spots, out_dir, samples=384):
     out = bpy.data.images.new("lightmap_out", LM_SIZE, LM_SIZE, alpha=False)
     rgba = np.concatenate([np.clip(enc, 0, 1), np.ones((LM_SIZE, LM_SIZE, 1), np.float32)], axis=2)
     out.pixels.foreach_set(rgba.astype(np.float32).ravel())
-    out.filepath_raw = os.path.join(out_dir, "room_lightmap.png")
+    out.filepath_raw = os.path.join(out_dir, name + ".png")
     out.file_format = "PNG"
     out.save()
     for o in room_objs:
@@ -92,7 +92,7 @@ def bake_lightmap(room_objs, spots, out_dir, samples=384):
     return scale
 
 
-def render_env(out_dir, lamp_glow, samples=256):
+def render_env(out_dir, lamp_glow, samples=256, prefix="env"):
     scene = RU.setup_cycles(samples=samples, res=(1024, 512))
     cam = RU.add_camera("EnvProbe", (0, 0, 0.14), (1, 0, 0.14), 20)
     cam.rotation_euler = (math.radians(90), 0, math.radians(-90))  # menghadap +X, atas = +Z
@@ -108,7 +108,7 @@ def render_env(out_dir, lamp_glow, samples=256):
         scene.cycles.sample_clamp_indirect = 8.0
     except Exception:  # noqa: BLE001
         pass
-    for name, hide in (("env_reflect", False), ("env_diffuse", True)):
+    for name, hide in ((prefix + "_reflect", False), (prefix + "_diffuse", True)):
         lamp_glow.hide_render = hide
         scene.render.filepath = os.path.join(out_dir, name + ".hdr")
         bpy.ops.render.render(write_still=True)
@@ -118,23 +118,25 @@ def render_env(out_dir, lamp_glow, samples=256):
     bpy.data.objects.remove(cam, do_unlink=True)
 
 
-def write_manifest(out_dir, lm_scale):
-    """scene.json: data lampu & lightmap untuk client (satuan fisik yang sama dengan Blender)."""
+def write_manifest(out_dir, lm_scale, R=build_room, scene_name="scene", lm_name="room_lightmap", env_prefix="env"):
+    """scene.json: data lampu & lightmap untuk client (satuan fisik yang sama dengan Blender).
+    R: modul/objek ruangan dengan atribut LAMP_X, LAMP_Z, LAMP_POWER, SPOT_SIZE_DEG, SPOT_BLEND, RX, RY, FLOOR_Z, CEIL_Z."""
+    color = list(getattr(R, "LAMP_COLOR", (1.0, 0.93, 0.82)))
     manifest = {
-        "lightmap": {"file": "room_lightmap.png", "intensity": lm_scale, "objects": ["Room", "Room_Ceiling"]},
-        "env": {"reflect": "env_reflect.hdr", "diffuse": "env_diffuse.hdr", "probe": [0, 0, 0.14]},
+        "lightmap": {"file": lm_name + ".png", "intensity": lm_scale, "objects": ["Room", "Room_Ceiling"]},
+        "env": {"reflect": env_prefix + "_reflect.hdr", "diffuse": env_prefix + "_diffuse.hdr", "probe": [0, 0, 0.14]},
         "spots": [
             {
-                "pos": [x, 0, build_room.LAMP_Z],
+                "pos": [x, 0, R.LAMP_Z],
                 # Blender watt → intensitas radian three.js: I = P / (4π)
-                "intensity": build_room.LAMP_POWER / (4 * math.pi),
-                "angle": math.radians(build_room.SPOT_SIZE_DEG) / 2,
-                "penumbra": build_room.SPOT_BLEND,
-                "color": [1.0, 0.93, 0.82],
+                "intensity": R.LAMP_POWER / (4 * math.pi),
+                "angle": math.radians(R.SPOT_SIZE_DEG) / 2,
+                "penumbra": R.SPOT_BLEND,
+                "color": color,
             }
-            for x in build_room.LAMP_X
+            for x in R.LAMP_X
         ],
-        "room": {"halfX": build_room.RX, "halfY": build_room.RY, "floorZ": build_room.FLOOR_Z, "ceilingZ": build_room.CEIL_Z},
+        "room": {"halfX": R.RX, "halfY": R.RY, "floorZ": R.FLOOR_Z, "ceilingZ": R.CEIL_Z},
     }
-    with open(os.path.join(out_dir, "scene.json"), "w") as f:
+    with open(os.path.join(out_dir, scene_name + ".json"), "w") as f:
         json.dump(manifest, f, indent=2)

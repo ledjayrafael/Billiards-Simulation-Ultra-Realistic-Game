@@ -60,8 +60,8 @@ const io = new NodeIO()
   .registerExtensions(ALL_EXTENSIONS)
   .registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'meshopt.encoder': MeshoptEncoder });
 
-const MAX_TEX = { 'table.glb': 2048, 'room.glb': 2048, 'cue.glb': 2048, 'balls.glb': 4096 };
-for (const name of ['table.glb', 'balls.glb', 'cue.glb', 'room.glb', 'cameras.glb']) {
+const MAX_TEX = { 'table.glb': 2048, 'table_pro.glb': 2048, 'room.glb': 2048, 'room_red.glb': 2048, 'room_blue.glb': 2048, 'cue.glb': 2048, 'balls.glb': 4096 };
+for (const name of ['table.glb', 'table_pro.glb', 'balls.glb', 'cue.glb', 'room.glb', 'room_red.glb', 'room_blue.glb', 'cameras.glb']) {
   const src = join(rawDir, name);
   if (!existsSync(src)) continue;
   if (name === 'cameras.glb') {
@@ -72,18 +72,25 @@ for (const name of ['table.glb', 'balls.glb', 'cue.glb', 'room.glb', 'cameras.gl
   const size = MAX_TEX[name];
   await doc.transform(
     dedup(),
-    prune(),
+    prune({ keepAttributes: true }), // jangan buang TEXCOORD_1 (UV lightmap) yang tidak dirujuk material glTF
     textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [size, size], quality: 90, effort: 80 }),
     meshopt({ encoder: MeshoptEncoder, level: 'medium' }),
   );
   await io.write(join(outDir, name), doc);
 }
-if (existsSync(join(rawDir, 'room_lightmap.png'))) {
-  await sharp(join(rawDir, 'room_lightmap.png')).webp({ quality: 94, effort: 5 }).toFile(join(outDir, 'room_lightmap.webp'));
-  const manifest = JSON.parse(readFileSync(join(rawDir, 'scene.json'), 'utf8'));
-  manifest.lightmap.file = 'room_lightmap.webp';
-  writeFileSync(join(outDir, 'scene.json'), JSON.stringify(manifest, null, 2));
-  for (const f of ['env_reflect.hdr', 'env_diffuse.hdr']) copyFileSync(join(rawDir, f), join(outDir, f));
+// lightmap + panorama + manifest per arena ('' = Lokal Privat, nama file lama)
+for (const id of ['', 'red', 'blue']) {
+  const lm = id ? `room_${id}_lightmap` : 'room_lightmap';
+  const scene = id ? `scene_${id}` : 'scene';
+  const env = id ? `env_${id}` : 'env';
+  if (!existsSync(join(rawDir, `${lm}.png`)) || !existsSync(join(rawDir, `${scene}.json`))) continue;
+  // arena: median 3×3 meredam noise bake (Cycles tidak men-denoise bake); radius 1 px < margin pulau UV 6 px
+  const img = sharp(join(rawDir, `${lm}.png`));
+  await (id ? img.median(3) : img).webp({ quality: id ? 90 : 94, effort: 5 }).toFile(join(outDir, `${lm}.webp`));
+  const manifest = JSON.parse(readFileSync(join(rawDir, `${scene}.json`), 'utf8'));
+  manifest.lightmap.file = `${lm}.webp`;
+  writeFileSync(join(outDir, `${scene}.json`), JSON.stringify(manifest, null, 2));
+  for (const f of [`${env}_reflect.hdr`, `${env}_diffuse.hdr`]) copyFileSync(join(rawDir, f), join(outDir, f));
 }
 
 // ── verifikasi dimensi (toleransi 0.5 mm) ──
@@ -102,22 +109,24 @@ const nodeBounds = async (file, nodeName) => {
 };
 console.log('▶ Verifikasi dimensi');
 const T = specs.table;
-{
-  const b = await nodeBounds('table.glb', 'Table_Cloth');
+for (const tf of ['table.glb', 'table_pro.glb']) {
+  if (!existsSync(join(outDir, tf))) continue;
+  console.log(`  [${tf}]`);
+  const b = await nodeBounds(tf, 'Table_Cloth');
   check('kain: panjang', b.max[0] - b.min[0], T.length + 2 * T.cushionWidth + 0.008);
   check('kain: lebar', b.max[2] - b.min[2], T.width + 2 * T.cushionWidth + 0.008);
   check('kain: permukaan y=0', b.max[1], 0);
-  const c0 = await nodeBounds('table.glb', 'Cushion_0'); // rail +y kiri → z glTF negatif
+  const c0 = await nodeBounds(tf, 'Cushion_0'); // rail +y kiri → z glTF negatif
   check('cushion 0: garis nose (|z| min)', Math.min(Math.abs(c0.min[2]), Math.abs(c0.max[2])), T.width / 2);
   check('cushion 0: tinggi atas', c0.max[1], T.cushionTopHeight);
-  const c2 = await nodeBounds('table.glb', 'Cushion_2'); // rail kaki +x
+  const c2 = await nodeBounds(tf, 'Cushion_2'); // rail kaki +x
   check('cushion 2: garis nose (x min)', c2.min[0], T.length / 2);
   const mouth = T.cornerMouth / Math.SQRT2;
   check('cushion 2: ujung nose (bukaan pocket sudut)', c2.max[2] > 0 ? T.width / 2 - mouth : 0, T.width / 2 - mouth);
-  const rail = await nodeBounds('table.glb', 'Table_Rail');
+  const rail = await nodeBounds(tf, 'Table_Rail');
   check('rail: panjang luar', rail.max[0] - rail.min[0], T.length + 2 * (T.cushionWidth + T.railWidth));
   check('rail: tinggi', rail.max[1], T.railHeight);
-  const body = await nodeBounds('table.glb', 'Table_Body');
+  const body = await nodeBounds(tf, 'Table_Body');
   check('meja: tinggi permukaan dari lantai', -body.min[1], T.surfaceHeight);
 }
 for (const id of [0, 5, 9]) {

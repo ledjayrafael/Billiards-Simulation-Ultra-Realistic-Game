@@ -68,7 +68,8 @@ export class CameraRig {
   constructor(
     private camera: THREE.PerspectiveCamera,
     private gltf: GLTF,
-    private manifest: SceneManifest,
+    /** data ruangan arena aktif (dapat berganti saat arena diganti) */
+    private manifest: () => SceneManifest,
   ) {
     this.mixer = new THREE.AnimationMixer(gltf.scene);
     this.mixer.addEventListener('finished', () => {
@@ -158,7 +159,7 @@ export class CameraRig {
   }
 
   private clampRoom(p: THREE.Vector3): void {
-    const r = this.manifest.room;
+    const r = this.manifest().room;
     p.x = Math.min(r.halfX - 0.3, Math.max(-r.halfX + 0.3, p.x));
     p.z = Math.min(r.halfY - 0.3, Math.max(-r.halfY + 0.3, p.z));
     if (this.mode !== 'top') p.y = Math.min(r.ceilingZ - 0.2, p.y);

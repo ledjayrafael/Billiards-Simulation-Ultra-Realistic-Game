@@ -1,0 +1,72 @@
+{
+  "lightmap": {
+    "file": "room_red_lightmap.webp",
+    "intensity": 4.815130233764648,
+    "objects": [
+      "Room",
+      "Room_Ceiling"
+    ]
+  },
+  "env": {
+    "reflect": "env_red_reflect.hdr",
+    "diffuse": "env_red_diffuse.hdr",
+    "probe": [
+      0,
+      0,
+      0.14
+    ]
+  },
+  "spots": [
+    {
+      "pos": [
+        -0.8,
+        0,
+        1.12
+      ],
+      "intensity": 5.668635982833889,
+      "angle": 1.0297442586766545,
+      "penumbra": 0.5,
+      "color": [
+        0.96,
+        0.98,
+        1
+      ]
+    },
+    {
+      "pos": [
+        0,
+        0,
+        1.12
+      ],
+      "intensity": 5.668635982833889,
+      "angle": 1.0297442586766545,
+      "penumbra": 0.5,
+      "color": [
+        0.96,
+        0.98,
+        1
+      ]
+    },
+    {
+      "pos": [
+        0.8,
+        0,
+        1.12
+      ],
+      "intensity": 5.668635982833889,
+      "angle": 1.0297442586766545,
+      "penumbra": 0.5,
+      "color": [
+        0.96,
+        0.98,
+        1
+      ]
+    }
+  ],
+  "room": {
+    "halfX": 9,
+    "halfY": 7,
+    "floorZ": -0.76,
+    "ceilingZ": 5.2
+  }
+}

@@ -1,4 +1,5 @@
 import type { GuideMode } from '../render/aimGuide';
+import type { ArenaId } from '../render/arenas';
 import type { Quality } from '../render/world';
 
 export interface Settings {
@@ -7,10 +8,11 @@ export interface Settings {
   volume: number;
   ambience: boolean;
   sensitivity: number;
+  arena: ArenaId;
 }
 
 const KEY = 'nine.settings.v1';
-const DEFAULTS: Settings = { quality: 'high', guide: 'short', volume: 0.8, ambience: true, sensitivity: 1 };
+const DEFAULTS: Settings = { quality: 'high', guide: 'short', volume: 0.8, ambience: true, sensitivity: 1, arena: 'private' };
 
 export function loadSettings(): Settings {
   try {

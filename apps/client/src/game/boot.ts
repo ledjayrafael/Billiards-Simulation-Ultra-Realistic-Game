@@ -3,12 +3,13 @@ import { rackNineBall } from '@billiards/rules';
 import type { MatchOptions } from '@billiards/shared';
 import { AudioEngine } from '../audio/audio';
 import { Controls } from '../input/controls';
-import { loadAssets } from '../render/assets';
+import { arenaDef, type ArenaId } from '../render/arenas';
+import { loadArena, loadAssets } from '../render/assets';
 import { World, type Quality } from '../render/world';
 import { createLoading, Hud } from '../ui/hud';
 import '../ui/style.css';
 import { Game } from './game';
-import { loadSettings } from './settings';
+import { loadSettings, saveSettings } from './settings';
 
 const params = new URLSearchParams(location.search);
 const loading = createLoading();
@@ -19,11 +20,15 @@ document.body.appendChild(canvas);
 const settings = loadSettings();
 const q = params.get('q') as Quality | null;
 if (q) settings.quality = q;
+settings.arena = arenaDef(params.get('arena') ?? settings.arena).id;
 
 try {
-  const assets = await loadAssets((f, label) => loading.set(f * 0.85, `memuat ${label}…`));
+  const [assets, arena] = await Promise.all([
+    loadAssets((f, label) => loading.set(f * 0.3, `memuat ${label}…`)),
+    loadArena(arenaDef(settings.arena), (f, label) => loading.set(0.3 + f * 0.55, `memuat ${label}…`)),
+  ]);
   loading.set(0.9, 'menyiapkan shader…');
-  const world = new World(canvas, assets, settings.quality);
+  const world = new World(canvas, assets, arena, settings.quality);
   const game = new Game(world, settings);
   world.resize(innerWidth, innerHeight);
 
@@ -60,6 +65,14 @@ try {
       hud.showMenu();
     },
     resume() {},
+    async selectArena(id: ArenaId, onProgress: (f: number) => void) {
+      const a = await loadArena(arenaDef(id), (f) => onProgress(f * 0.9));
+      world.setArena(a);
+      await world.warmUp();
+      onProgress(1);
+      settings.arena = id;
+      saveSettings(settings);
+    },
     nextRack() {
       game.rig.stopCinematic();
       game.continueAfterRack();

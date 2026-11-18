@@ -169,7 +169,7 @@ export class Game {
     readonly world: World,
     public settings: Settings,
   ) {
-    this.rig = new CameraRig(world.camera, world.assets.cameras, world.assets.manifest);
+    this.rig = new CameraRig(world.camera, world.assets.cameras, () => world.manifest);
     this.ballViews = new BallViews(world.balls);
     this.cueView = new CueView(world.cues);
     this.cueView.setCue(cueSpec(this.cueId));
@@ -645,7 +645,7 @@ export class Game {
     }
     this.rig.update(dt, this.context());
     const h = this.rig.height;
-    this.world.setOverheadHidden(h > 0.74, h > this.world.assets.manifest.room.ceilingZ - 0.25);
+    this.world.setOverheadHidden(h > 0.74, h > this.world.manifest.room.ceilingZ - 0.25);
   }
 
   /**
