@@ -105,7 +105,18 @@ export class World {
       b.castShadow = true;
       b.receiveShadow = true;
       b.matrixAutoUpdate = true;
-      for (const m of materialsOf(b)) this.patchMaterial(m, 1);
+      for (const m of materialsOf(b)) {
+        // resin dari GLB terlalu mengilap (roughness 0.07 + clearcoat penuh 0.025) → highlight silau;
+        // redam agar tetap mengilap tapi tidak menyilaukan
+        const pm = m as THREE.MeshPhysicalMaterial;
+        pm.roughness = Math.max(pm.roughness, 0.26);
+        if (pm.isMeshPhysicalMaterial) {
+          pm.clearcoat = Math.min(pm.clearcoat, 0.2);
+          pm.clearcoatRoughness = Math.max(pm.clearcoatRoughness, 0.18);
+        }
+        pm.envMapIntensity = 0.45;
+        this.patchMaterial(m, 1);
+      }
       this.scene.add(b);
     }
     this.cues = assets.cues;
