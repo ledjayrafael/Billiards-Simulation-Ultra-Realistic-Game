@@ -5,6 +5,7 @@ import * as synth from './synth';
 
 type Bank = 'clack' | 'cushion' | 'cue' | 'break' | 'miscue' | 'pocket' | 'slate';
 const v3 = new THREE.Vector3();
+const SOUND_BASE = '/assets/sound/';
 
 /** WebAudio: suara dipicu dari events[] simulasi; volume & pitch mengikuti kecepatan tumbukan. */
 export class AudioEngine {
@@ -51,6 +52,9 @@ export class AudioEngine {
     this.bank.set('miscue', [buf(synth.miscue())]);
     this.bank.set('pocket', [0, 1, 2].map((i) => buf(synth.pocketDrop(i))));
     this.bank.set('slate', [buf(synth.slateThump())]);
+    // rekaman asli (CC0, lihat assets/sound/LICENSES.md) menggantikan sintesis begitu selesai dimuat;
+    // sintesis tetap jadi cadangan bila berkas gagal dimuat. Miscue & room tone tetap sintesis.
+    void this.loadRecordings(ctx);
     // ambience
     const src = ctx.createBufferSource();
     src.buffer = buf(synth.roomTone());
@@ -60,6 +64,24 @@ export class AudioEngine {
     src.connect(gain).connect(this.master);
     src.start();
     this.ambience = { src, gain };
+  }
+
+  private async loadRecordings(ctx: AudioContext): Promise<void> {
+    try {
+      const res = await fetch(`${SOUND_BASE}sounds.json`);
+      if (!res.ok) return;
+      const banks = (await res.json()) as Partial<Record<Bank, string[]>>;
+      await Promise.all(
+        (Object.entries(banks) as [Bank, string[]][]).map(async ([bank, files]) => {
+          const bufs = await Promise.all(
+            files.map(async (f) => ctx.decodeAudioData(await (await fetch(SOUND_BASE + f)).arrayBuffer())),
+          );
+          if (bufs.length) this.bank.set(bank, bufs);
+        }),
+      );
+    } catch (err) {
+      console.warn('rekaman suara gagal dimuat, memakai suara sintesis', err);
+    }
   }
 
   setVolume(v: number): void {
@@ -79,7 +101,7 @@ export class AudioEngine {
   private play(bank: Bank, gain: number, rate: number, pos: [number, number, number] | null, lowpass = 0): void {
     const ctx = this.ctx;
     if (!ctx || !this.master || ctx.state !== 'running' || gain < 0.004) return;
-    if (this.frameVoices >= 6) return;
+    if (this.frameVoices >= 8) return;
     this.frameVoices++;
     const list = this.bank.get(bank);
     if (!list) return;

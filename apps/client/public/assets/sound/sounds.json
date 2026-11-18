@@ -1,0 +1,35 @@
+{
+ "clack": [
+  "clack_0.wav",
+  "clack_1.wav",
+  "clack_2.wav",
+  "clack_3.wav",
+  "clack_4.wav",
+  "clack_5.wav"
+ ],
+ "cue": [
+  "cue_0.wav",
+  "cue_1.wav",
+  "cue_2.wav"
+ ],
+ "break": [
+  "break_0.wav",
+  "break_1.wav",
+  "break_2.wav"
+ ],
+ "cushion": [
+  "cushion_0.wav",
+  "cushion_1.wav",
+  "cushion_2.wav"
+ ],
+ "pocket": [
+  "pocket_0.wav",
+  "pocket_1.wav",
+  "pocket_2.wav",
+  "pocket_3.wav"
+ ],
+ "slate": [
+  "slate_0.wav",
+  "slate_1.wav"
+ ]
+}
